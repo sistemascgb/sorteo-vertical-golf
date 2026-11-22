@@ -1,0 +1,831 @@
+<!-- ... existing code ... -->
+                    currentColab: appState.currentColab,
+                    currentPrize: appState.currentPrize,
+                    lastWinnerColab: appState.lastWinnerColab,
+                    lastWinnerPrize: appState.lastWinnerPrize
+                };
+
+                const payload = {
+                    activeSessionId: appState.activeSessionId,
+                    sessions: appState.sessions
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+                renderSessionSelector();
+                updateStorageBadge(createdAt);
+            } catch (e) {}
+        }
+
+        function updateStorageBadge(createdAt) {
+            const badgeText = document.getElementById('storageStatusText');
+            if (!badgeText || !createdAt) return;
+            const daysLeft = Math.max(0, Math.ceil((createdAt + SEVEN_DAYS_MS - Date.now()) / (24 * 60 * 60 * 1000)));
+            badgeText.textContent = `Guardado (${daysLeft}d)`;
+        }
+
+        function loadStateFromStorage() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) {
+                    appState.activeSessionId = generateSessionId();
+                    saveStateToStorage();
+                    return;
+                }
+                const parsed = JSON.parse(raw);
+                const now = Date.now();
+                const validSessions = {};
+                if (parsed && parsed.sessions) {
+                    Object.keys(parsed.sessions).forEach(id => {
+                        const s = parsed.sessions[id];
+                        if (s && (!s.expiresAt || s.expiresAt > now)) {
+                            validSessions[id] = s;
+                        }
+                    });
+                }
+                appState.sessions = validSessions;
+                const keys = Object.keys(validSessions);
+                if (keys.length === 0) {
+                    appState.activeSessionId = generateSessionId();
+                    saveStateToStorage();
+                    return;
+                }
+                const targetId = (parsed.activeSessionId && validSessions[parsed.activeSessionId])
+                    ? parsed.activeSessionId
+                    : keys[0];
+                applySessionData(targetId);
+            } catch (e) {
+                appState.activeSessionId = generateSessionId();
+            }
+        }
+
+        function applySessionData(sessionId) {
+            const session = appState.sessions[sessionId];
+            if (!session) return;
+
+            appState.activeSessionId = sessionId;
+            appState.colabList = Array.isArray(session.colabList) ? [...session.colabList] : [...SAMPLE_COLAB];
+            appState.prizesList = Array.isArray(session.prizesList) ? [...session.prizesList] : [...SAMPLE_PRIZES];
+            appState.backupColab = Array.isArray(session.backupColab) ? [...session.backupColab] : [...appState.colabList];
+            appState.backupPrizes = Array.isArray(session.backupPrizes) ? [...session.backupPrizes] : [...appState.prizesList];
+            appState.winnersHistory = Array.isArray(session.winnersHistory) ? [...session.winnersHistory] : [];
+            appState.drawMode = session.drawMode || 'both';
+            appState.currentTheme = session.currentTheme || 'modern_ui';
+            appState.spinDurationSec = session.spinDurationSec || 4.0;
+            appState.currentColab = session.currentColab || null;
+            appState.currentPrize = session.currentPrize || null;
+            appState.lastWinnerColab = session.lastWinnerColab || null;
+            appState.lastWinnerPrize = session.lastWinnerPrize || null;
+            appState.scrollOffsetColab = 0;
+            appState.scrollOffsetPrizes = 0;
+            appState.isRespinReplacement = false;
+
+            const titleInput = document.getElementById('eventTitleInput');
+            if (titleInput) titleInput.value = session.title || 'Torneo de Golf';
+
+            const slider = document.getElementById('spinDurationSlider');
+            if (slider) slider.value = appState.spinDurationSec;
+            const durLbl = document.getElementById('spinDurationLabel');
+            if (durLbl) durLbl.textContent = `${appState.spinDurationSec.toFixed(1)}s`;
+
+            const chkRemove = document.getElementById('chkAutoRemove');
+            if (chkRemove) chkRemove.checked = session.autoRemove !== undefined ? Boolean(session.autoRemove) : true;
+
+            const themeSel = document.getElementById('themeSelector');
+            if (themeSel) themeSel.value = appState.currentTheme;
+
+            const activeColabEl = document.getElementById('activeColabDisplay');
+            const activePrizeEl = document.getElementById('activePrizeDisplay');
+            const fixedText = document.getElementById('fixedSelectionText');
+            const fixedRoundTag = document.getElementById('fixedSelectionRoundTag');
+
+            if (appState.winnersHistory.length > 0) {
+                const last = appState.winnersHistory[appState.winnersHistory.length - 1];
+                if (activeColabEl) activeColabEl.textContent = last.colab;
+                if (activePrizeEl) activePrizeEl.textContent = last.prize;
+                if (fixedText) fixedText.textContent = `${last.colab}  →  ${last.prize}`;
+                if (fixedRoundTag) fixedRoundTag.textContent = `Ronda #${last.round}`;
+            } else {
+                if (activeColabEl) activeColabEl.textContent = '— Esperando giro —';
+                if (activePrizeEl) activePrizeEl.textContent = '— Esperando giro —';
+                if (fixedText) fixedText.textContent = 'Listo para iniciar el sorteo';
+                if (fixedRoundTag) fixedRoundTag.textContent = 'En espera';
+            }
+
+            syncTextareasFromState();
+            updateCountersAndHistoryUI();
+            updateDrawModeUI(appState.drawMode);
+            applyTheme(appState.currentTheme);
+            renderSessionSelector();
+            updateStorageBadge(session.createdAt || Date.now());
+        }
+
+        function renderSessionSelector() {
+            const sel = document.getElementById('sessionSelector');
+            if (!sel) return;
+            const ids = Object.keys(appState.sessions);
+            sel.innerHTML = ids.map(id => {
+                const s = appState.sessions[id];
+                const count = (s.winnersHistory || []).length;
+                const label = `${s.title || 'Sorteo'} (${count} rondas)`;
+                return `<option value="${id}" class="bg-[#1b1f2a] text-white" ${id === appState.activeSessionId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+            }).join('');
+        }
+
+        function switchSession(sessionId) {
+            if (appState.isSpinning || !appState.sessions[sessionId]) return;
+            applySessionData(sessionId);
+            saveStateToStorage();
+            showToast('Sesión de sorteo cargada', 'info');
+        }
+
+        function createNewSession() {
+            if (appState.isSpinning) return;
+            const count = Object.keys(appState.sessions).length + 1;
+            const newId = generateSessionId();
+            const now = Date.now();
+            appState.sessions[newId] = {
+                id: newId,
+                title: `Sorteo #${count} - Nuevo Horario`,
+                createdAt: now,
+                updatedAt: now,
+                expiresAt: now + SEVEN_DAYS_MS,
+                colabList: [...SAMPLE_COLAB],
+                prizesList: [...SAMPLE_PRIZES],
+                backupColab: [...SAMPLE_COLAB],
+                backupPrizes: [...SAMPLE_PRIZES],
+                winnersHistory: [],
+                drawMode: 'both',
+                currentTheme: appState.currentTheme,
+                spinDurationSec: appState.spinDurationSec,
+                autoRemove: true,
+                currentColab: null,
+                currentPrize: null,
+                lastWinnerColab: null,
+                lastWinnerPrize: null
+            };
+            applySessionData(newId);
+            saveStateToStorage();
+            showToast('Nuevo sorteo preparado y guardado por 7 días', 'success');
+        }
+
+        function duplicateCurrentSession() {
+            if (appState.isSpinning) return;
+            const currentTitle = document.getElementById('eventTitleInput')?.value.trim() || 'Sorteo';
+            const newId = generateSessionId();
+            const now = Date.now();
+            appState.sessions[newId] = {
+                id: newId,
+                title: `${currentTitle} (Copia)`,
+                createdAt: now,
+                updatedAt: now,
+                expiresAt: now + SEVEN_DAYS_MS,
+                colabList: [...appState.backupColab],
+                prizesList: [...appState.backupPrizes],
+                backupColab: [...appState.backupColab],
+                backupPrizes: [...appState.backupPrizes],
+                winnersHistory: [],
+                drawMode: appState.drawMode,
+                currentTheme: appState.currentTheme,
+                spinDurationSec: appState.spinDurationSec,
+                autoRemove: document.getElementById('chkAutoRemove')?.checked ?? true,
+                currentColab: null,
+                currentPrize: null,
+                lastWinnerColab: null,
+                lastWinnerPrize: null
+            };
+            applySessionData(newId);
+            saveStateToStorage();
+            showToast('Sorteo duplicado con listas completas', 'success');
+        }
+
+        function deleteCurrentSession() {
+            if (appState.isSpinning) return;
+            const ids = Object.keys(appState.sessions);
+            if (ids.length <= 1) {
+                resetEntireHistory();
+                restoreInitialLists();
+                saveStateToStorage();
+                showToast('Sesión única reiniciada', 'info');
+                return;
+            }
+            delete appState.sessions[appState.activeSessionId];
+            const nextId = Object.keys(appState.sessions)[0];
+            applySessionData(nextId);
+            saveStateToStorage();
+            showToast('Sesión eliminada', 'info');
+        }
+
+        function onEventTitleChange(val) {
+            saveStateToStorage();
+        }
+
+        function applyTheme(themeKey) {
+            const theme = THEMES[themeKey] || THEMES.modern_ui;
+            appState.currentTheme = themeKey;
+
+            document.documentElement.style.setProperty('--bg-base', theme.bgBase);
+            document.documentElement.style.setProperty('--glow-1', theme.glow1);
+            document.documentElement.style.setProperty('--glow-2', theme.glow2);
+            document.documentElement.style.setProperty('--dot-color', theme.dotColor);
+
+            const logoBox = document.getElementById('brandLogoBox');
+            const logoIcon = document.getElementById('brandLogoIcon');
+            const subtitle = document.getElementById('themeSubtitleText');
+
+            if (logoBox) {
+                logoBox.className = `w-11 h-11 rounded-2xl bg-gradient-to-br ${theme.logoGradient} flex items-center justify-center text-white shadow-lg ring-1 ring-white/20 shrink-0 transition-all duration-300`;
+            }
+            if (logoIcon) logoIcon.className = theme.logoIcon;
+            if (subtitle) subtitle.textContent = theme.subtitle;
+
+            renderWheels();
+            saveStateToStorage();
+        }
+
+        /**
+         * ============================================================================
+         * MOTOR DE AUDIO SINTETIZADO
+         * ============================================================================
+         */
+        let audioCtx = null;
+        function ensureAudioContext() {
+            if (!audioCtx) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioContextClass) audioCtx = new AudioContextClass();
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playTickSound(pitch = 620) {
+            if (!appState.soundEnabled) return;
+            try {
+                ensureAudioContext();
+                if (!audioCtx) return;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(pitch, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(140, audioCtx.currentTime + 0.045);
+
+                gain.gain.setValueAtTime(0.11, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.045);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.05);
+            } catch (e) {}
+        }
+
+        function playWinFanfare() {
+            if (!appState.soundEnabled) return;
+            try {
+                ensureAudioContext();
+                if (!audioCtx) return;
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, idx) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    const start = audioCtx.currentTime + idx * 0.09;
+                    osc.frequency.setValueAtTime(freq, start);
+
+                    gain.gain.setValueAtTime(0.001, start);
+                    gain.gain.linearRampToValueAtTime(0.15, start + 0.03);
+                    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.42);
+
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(start);
+                    osc.stop(start + 0.45);
+                });
+            } catch (e) {}
+        }
+
+        function toggleSound() {
+            appState.soundEnabled = !appState.soundEnabled;
+            const icon = document.getElementById('soundIcon');
+            if (icon) {
+                icon.className = appState.soundEnabled
+                    ? 'fa-solid fa-volume-high text-[#00AEEF]'
+                    : 'fa-solid fa-volume-xmark text-slate-500';
+            }
+            showToast(appState.soundEnabled ? 'Efectos de sonido activados' : 'Sonido silenciado', 'info');
+        }
+
+        /**
+         * ============================================================================
+         * RENDERIZADO DE TAMBORES VERTICALES (DESPLAZAMIENTO DE ABAJO HACIA ARRIBA)
+         * ============================================================================
+         */
+        function drawVerticalDrumCanvas(canvasId, items, offset, palette, centerEmoji, accentColor) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || canvas.offsetParent === null) return;
+            const rect = canvas.getBoundingClientRect();
+            const w = Math.max(240, Math.floor(rect.width || 350));
+            const h = Math.max(240, Math.floor(rect.height || 350));
+            const dpr = window.devicePixelRatio || 1;
+
+            if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+                canvas.width = w * dpr;
+                canvas.height = h * dpr;
+            }
+
+            const ctx = canvas.getContext('2d');
+            ctx.save();
+            ctx.scale(dpr, dpr);
+            ctx.clearRect(0, 0, w, h);
+
+            const pad = 10;
+            const boxW = w - pad * 2;
+            const boxH = h - pad * 2;
+            const centerY = h / 2;
+
+            ctx.beginPath();
+            ctx.roundRect(pad, pad, boxW, boxH, 18);
+            ctx.fillStyle = '#131720';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.stroke();
+
+            const list = items.length > 0 ? items : ['Sin elementos disponibles'];
+            const count = list.length;
+            const cycle = count * ROW_HEIGHT;
+            const norm = ((offset % cycle) + cycle) % cycle;
+            const rows = Math.ceil(boxH / ROW_HEIGHT) + 4;
+            const startRow = Math.floor((norm - boxH / 2) / ROW_HEIGHT) - 2;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.roundRect(pad + 3, pad + 3, boxW - 6, boxH - 6, 15);
+            ctx.clip();
+
+            for (let i = 0; i < rows; i++) {
+                const rIdx = startRow + i;
+                const itemIdx = ((rIdx % count) + count) % count;
+                const y = centerY + (rIdx * ROW_HEIGHT - norm);
+
+                if (y + ROW_HEIGHT < pad || y - ROW_HEIGHT > h - pad) continue;
+
+                const cardW = boxW - 24;
+                const cardH = ROW_HEIGHT - 10;
+                const cardX = w / 2 - cardW / 2;
+                const cardY = y - cardH / 2;
+                const centered = Math.abs(y - centerY) < ROW_HEIGHT * 0.45;
+
+                ctx.beginPath();
+                ctx.roundRect(cardX, cardY, cardW, cardH, 12);
+                ctx.fillStyle = items.length === 0 ? '#1e293b' : palette[itemIdx % palette.length];
+                ctx.fill();
+                ctx.lineWidth = centered ? 2.5 : 1;
+                ctx.strokeStyle = centered ? '#ffffff' : 'rgba(255, 255, 255, 0.2)';
+                ctx.stroke();
+
+                ctx.font = '15px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(centerEmoji || '🏆', cardX + 22, y);
+
+                ctx.textAlign = 'left';
+                ctx.font = centered ? '800 13.5px Inter, sans-serif' : '600 12.5px Inter, sans-serif';
+                let label = String(list[itemIdx]);
+                const maxChars = Math.max(18, Math.floor((cardW - 56) / 7.2));
+                if (label.length > maxChars) {
+                    label = label.slice(0, maxChars - 1) + '…';
+                }
+                ctx.fillText(label, cardX + 42, y);
+            }
+
+            ctx.beginPath();
+            ctx.roundRect(pad + 6, centerY - (ROW_HEIGHT - 6) / 2, boxW - 12, ROW_HEIGHT - 6, 13);
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = accentColor;
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.fillStyle = accentColor;
+            ctx.beginPath();
+            ctx.moveTo(pad, centerY - 7);
+            ctx.lineTo(pad + 10, centerY);
+            ctx.lineTo(pad, centerY + 7);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(w - pad, centerY - 7);
+            ctx.lineTo(w - pad - 10, centerY);
+            ctx.lineTo(w - pad, centerY + 7);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function renderWheels() {
+            const theme = THEMES[appState.currentTheme] || THEMES.modern_ui;
+            drawVerticalDrumCanvas('canvasColab', appState.colabList, appState.scrollOffsetColab, theme.colabPalette, theme.colabIcon, theme.colabAccent || '#00AEEF');
+            drawVerticalDrumCanvas('canvasPrizes', appState.prizesList, appState.scrollOffsetPrizes, theme.prizesPalette, theme.prizeIcon, theme.pointerColor || '#FF7A00');
+        }
+
+        function getCenteredIndex(offset, count) {
+            if (count <= 0) return -1;
+            const cycle = count * ROW_HEIGHT;
+            const norm = ((offset % cycle) + cycle) % cycle;
+            const row = Math.round(norm / ROW_HEIGHT);
+            return ((row % count) + count) % count;
+        }
+
+        /**
+         * ============================================================================
+         * ALEATORIEDAD REAL Y ANIMACIÓN VERTICAL
+         * ============================================================================
+         */
+        function cryptoRandom() {
+            if (window.crypto && window.crypto.getRandomValues) {
+                const arr = new Uint32Array(1);
+                window.crypto.getRandomValues(arr);
+                return arr[0] / (0xffffffff + 1);
+            }
+            return Math.random();
+        }
+
+        function fisherYatesShuffle(array, avoidFirst = null) {
+            const arr = [...array];
+            if (arr.length <= 1) return arr;
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(cryptoRandom() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            if (avoidFirst && arr[0] === avoidFirst) {
+                arr.push(arr.shift());
+            }
+            return arr;
+        }
+
+        function pickTargetOffset(items, currentOffset, cycles, avoidValue) {
+            const count = items.length;
+            if (count <= 0) return currentOffset;
+            const cycle = count * ROW_HEIGHT;
+            let targetIdx = Math.floor(cryptoRandom() * count);
+            if (count > 1 && avoidValue && items[targetIdx] === avoidValue) {
+                targetIdx = (targetIdx + 1) % count;
+            }
+            const targetMod = targetIdx * ROW_HEIGHT;
+            const currentMod = ((currentOffset % cycle) + cycle) % cycle;
+            let delta = (targetMod - currentMod + cycle) % cycle;
+            if (delta === 0) delta = cycle;
+            return currentOffset + cycles * cycle + delta;
+        }
+
+        function updateSpinDuration(val) {
+            appState.spinDurationSec = parseFloat(val) || 4.0;
+            const lbl = document.getElementById('spinDurationLabel');
+            if (lbl) lbl.textContent = `${appState.spinDurationSec.toFixed(1)}s`;
+            saveStateToStorage();
+        }
+
+        function setSpinPreset(seconds) {
+            const slider = document.getElementById('spinDurationSlider');
+            if (slider) slider.value = seconds;
+            updateSpinDuration(seconds);
+        }
+
+        function checkFinishedState() {
+            const mode = appState.drawMode || 'both';
+            if (mode === 'colab') {
+                appState.isFinished = appState.colabList.length === 0;
+            } else {
+                appState.isFinished = appState.prizesList.length === 0;
+            }
+            const banner = document.getElementById('finishedBanner');
+            const bannerTitle = document.getElementById('finishedBannerTitle');
+            if (banner) {
+                banner.classList.toggle('hidden', !appState.isFinished);
+            }
+            if (bannerTitle && appState.isFinished) {
+                bannerTitle.textContent = mode === 'colab'
+                    ? '¡Sorteo Finalizado! Se han seleccionado todos los participantes'
+                    : '¡Sorteo Finalizado! Se han entregado todos los premios';
+            }
+        }
+
+        function setButtonsLock(locked) {
+            const btnBoth = document.getElementById('btnSpinBoth');
+            const btnColab = document.getElementById('btnSpinColabOnly');
+            const btnPrizes = document.getElementById('btnSpinPrizesOnly');
+
+            if (btnBoth) btnBoth.disabled = locked || appState.isFinished;
+            if (btnColab) btnColab.disabled = locked || appState.isFinished;
+            if (btnPrizes) btnPrizes.disabled = locked || appState.isFinished;
+        }
+
+        function getSelectedDrawMode() {
+            const sel = document.getElementById('drawModeSelector');
+            return sel ? sel.value : (appState.drawMode || 'both');
+        }
+
+        function updateDrawModeUI(mode) {
+            appState.drawMode = mode || 'both';
+            const sel = document.getElementById('drawModeSelector');
+            if (sel && sel.value !== appState.drawMode) {
+                sel.value = appState.drawMode;
+            }
+
+            const labelEl = document.getElementById('btnMainSpinLabel');
+            const drumsGrid = document.getElementById('drumsGrid');
+            const stageColab = document.getElementById('drumStageColab');
+            const stagePrizes = document.getElementById('drumStagePrizes');
+
+            const sbColab = document.getElementById('scoreboardColabCard');
+            const sbCenter = document.getElementById('scoreboardCenterEmblem');
+            const sbPrize = document.getElementById('scoreboardPrizeCard');
+
+            if (appState.drawMode === 'colab') {
+                if (labelEl) labelEl.textContent = 'SORTEAR SOLO PERSONAS';
+                if (stageColab) {
+                    stageColab.classList.remove('hidden');
+                    stageColab.classList.add('max-w-lg', 'mx-auto');
+                }
+                if (stagePrizes) stagePrizes.classList.add('hidden');
+                if (drumsGrid) {
+                    drumsGrid.classList.remove('md:grid-cols-2');
+                    drumsGrid.classList.add('grid-cols-1');
+                }
+                if (sbColab) {
+                    sbColab.classList.remove('hidden', 'md:col-span-5');
+                    sbColab.classList.add('md:col-span-11');
+                }
+                if (sbCenter) sbCenter.classList.add('hidden');
+                if (sbPrize) sbPrize.classList.add('hidden');
+            } else if (appState.drawMode === 'prizes') {
+                if (labelEl) labelEl.textContent = 'SORTEAR SOLO PREMIOS';
+                if (stagePrizes) {
+                    stagePrizes.classList.remove('hidden');
+                    stagePrizes.classList.add('max-w-lg', 'mx-auto');
+                }
+                if (stageColab) stageColab.classList.add('hidden');
+                if (drumsGrid) {
+                    drumsGrid.classList.remove('md:grid-cols-2');
+                    drumsGrid.classList.add('grid-cols-1');
+                }
+                if (sbPrize) {
+                    sbPrize.classList.remove('hidden', 'md:col-span-5');
+                    sbPrize.classList.add('md:col-span-11');
+                }
+                if (sbCenter) sbCenter.classList.add('hidden');
+                if (sbColab) sbColab.classList.add('hidden');
+            } else {
+                if (labelEl) labelEl.textContent = 'GIRAR AMBOS TAMBORES';
+                if (stageColab) {
+                    stageColab.classList.remove('hidden', 'max-w-lg', 'mx-auto');
+                }
+                if (stagePrizes) {
+                    stagePrizes.classList.remove('hidden', 'max-w-lg', 'mx-auto');
+                }
+                if (drumsGrid) {
+                    drumsGrid.classList.remove('grid-cols-1');
+                    drumsGrid.classList.add('md:grid-cols-2');
+                }
+                if (sbColab) {
+                    sbColab.classList.remove('hidden', 'md:col-span-11');
+                    sbColab.classList.add('md:col-span-5');
+                }
+                if (sbCenter) sbCenter.classList.remove('hidden');
+                if (sbPrize) {
+                    sbPrize.classList.remove('hidden', 'md:col-span-11');
+                    sbPrize.classList.add('md:col-span-5');
+                }
+            }
+
+            checkFinishedState();
+            setButtonsLock(appState.isSpinning);
+            saveStateToStorage();
+            setTimeout(renderWheels, 20);
+        }
+
+        function spinWheels(mode = 'both') {
+            if (appState.isSpinning) return;
+
+            checkFinishedState();
+            if (appState.isFinished) {
+                setButtonsLock(false);
+                showToast('El sorteo ha finalizado porque ya no quedan elementos en este modo', 'info');
+                return;
+            }
+
+            const validationMsg = document.getElementById('mainValidationMsg');
+            if (validationMsg) validationMsg.textContent = '';
+
+            if ((mode === 'both' || mode === 'colab') && appState.colabList.length === 0) {
+                if (validationMsg) validationMsg.textContent = 'Agrega al menos 1 participante para sortear.';
+                showToast('No hay participantes disponibles en la lista', 'error');
+                return;
+            }
+            if ((mode === 'both' || mode === 'prizes') && appState.prizesList.length === 0) {
+                if (validationMsg) validationMsg.textContent = 'No quedan premios disponibles para sortear.';
+                showToast('No quedan premios disponibles', 'error');
+                return;
+            }
+
+            if (mode === 'both' || mode === 'colab') {
+                appState.colabList = fisherYatesShuffle(appState.colabList, appState.lastWinnerColab);
+            }
+            if (mode === 'both' || mode === 'prizes') {
+                appState.prizesList = fisherYatesShuffle(appState.prizesList, appState.lastWinnerPrize);
+            }
+            syncTextareasFromState();
+            renderWheels();
+
+            appState.isSpinning = true;
+            setButtonsLock(true);
+
+            const reSpinBadge = document.getElementById('reSpinBadge');
+            if (reSpinBadge) {
+                reSpinBadge.classList.toggle('hidden', mode === 'both');
+            }
+
+            const baseDurationMs = appState.spinDurationSec * 1000;
+            const durationColab = baseDurationMs;
+            const durationPrizes = mode === 'both' ? baseDurationMs + 600 : baseDurationMs;
+
+            const cyclesBase = Math.max(3, Math.round(appState.spinDurationSec * 1.1));
+            const startOffsetColab = appState.scrollOffsetColab;
+            const startOffsetPrizes = appState.scrollOffsetPrizes;
+
+            const endOffsetColab = (mode === 'both' || mode === 'colab')
+                ? pickTargetOffset(appState.colabList, startOffsetColab, cyclesBase, appState.lastWinnerColab)
+                : startOffsetColab;
+
+            const endOffsetPrizes = (mode === 'both' || mode === 'prizes')
+                ? pickTargetOffset(appState.prizesList, startOffsetPrizes, cyclesBase + 1, appState.lastWinnerPrize)
+                : startOffsetPrizes;
+
+            let lastTickColab = -1;
+            let lastTickPrizes = -1;
+            const startTime = performance.now();
+
+            function easeOutCubic(t) {
+                return 1 - Math.pow(1 - t, 3);
+            }
+
+            function animateFrame(now) {
+                const elapsed = now - startTime;
+                let doneColab = true;
+                let donePrizes = true;
+
+                if (endOffsetColab !== startOffsetColab) {
+                    const tC = Math.min(1, elapsed / durationColab);
+                    appState.scrollOffsetColab = startOffsetColab + (endOffsetColab - startOffsetColab) * easeOutCubic(tC);
+                    const idxC = getCenteredIndex(appState.scrollOffsetColab, appState.colabList.length);
+                    if (idxC !== lastTickColab && idxC >= 0) {
+                        lastTickColab = idxC;
+                        playTickSound(640);
+                        const tickerC = document.getElementById('liveTickerColab');
+                        if (tickerC) tickerC.textContent = appState.colabList[idxC];
+                    }
+                    if (tC < 1) doneColab = false;
+                }
+
+                if (endOffsetPrizes !== startOffsetPrizes) {
+                    const tP = Math.min(1, elapsed / durationPrizes);
+                    appState.scrollOffsetPrizes = startOffsetPrizes + (endOffsetPrizes - startOffsetPrizes) * easeOutCubic(tP);
+                    const idxP = getCenteredIndex(appState.scrollOffsetPrizes, appState.prizesList.length);
+                    if (idxP !== lastTickPrizes && idxP >= 0) {
+                        lastTickPrizes = idxP;
+                        if (endOffsetColab === startOffsetColab) playTickSound(520);
+                        const tickerP = document.getElementById('liveTickerPrizes');
+                        if (tickerP) tickerP.textContent = appState.prizesList[idxP];
+                    }
+                    if (tP < 1) donePrizes = false;
+                }
+
+                renderWheels();
+
+                if (!doneColab || !donePrizes) {
+                    requestAnimationFrame(animateFrame);
+                } else {
+                    finalizeSpin(mode);
+                }
+            }
+
+            requestAnimationFrame(animateFrame);
+        }
+
+        function finalizeSpin(mode) {
+            appState.isSpinning = false;
+
+            if (mode === 'both' || mode === 'colab') {
+                const idxC = getCenteredIndex(appState.scrollOffsetColab, appState.colabList.length);
+                appState.currentColabIdx = idxC;
+                appState.currentColab = appState.colabList[idxC] || '—';
+                appState.lastWinnerColab = appState.currentColab;
+            } else if (!appState.currentColab) {
+                appState.currentColab = '— Solo sorteo de premio —';
+            }
+
+            if (mode === 'both' || mode === 'prizes') {
+                const idxP = getCenteredIndex(appState.scrollOffsetPrizes, appState.prizesList.length);
+                appState.currentPrizeIdx = idxP;
+                appState.currentPrize = appState.prizesList[idxP] || '—';
+                appState.lastWinnerPrize = appState.currentPrize;
+            } else if (!appState.currentPrize) {
+                appState.currentPrize = '— Solo sorteo de persona —';
+            }
+
+            const activeColabEl = document.getElementById('activeColabDisplay');
+            const activePrizeEl = document.getElementById('activePrizeDisplay');
+            const tickerC = document.getElementById('liveTickerColab');
+            const tickerP = document.getElementById('liveTickerPrizes');
+            const fixedText = document.getElementById('fixedSelectionText');
+            const fixedRoundTag = document.getElementById('fixedSelectionRoundTag');
+
+            if (activeColabEl) activeColabEl.textContent = mode === 'prizes' ? '— Solo Premio —' : appState.currentColab;
+            if (activePrizeEl) activePrizeEl.textContent = mode === 'colab' ? '— Solo Persona —' : appState.currentPrize;
+
+            if (tickerC && (mode === 'both' || mode === 'colab')) tickerC.textContent = `🎯 ${appState.currentColab}`;
+            if (tickerP && (mode === 'both' || mode === 'prizes')) tickerP.textContent = `🏆 ${appState.currentPrize}`;
+
+            const timeStr = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const roundColab = mode === 'prizes' ? '— (Solo Premio) —' : appState.currentColab;
+            const roundPrize = mode === 'colab' ? '— (Solo Persona) —' : appState.currentPrize;
+
+            if (appState.isRespinReplacement && appState.winnersHistory.length > 0) {
+                const lastEntry = appState.winnersHistory[appState.winnersHistory.length - 1];
+                if (mode === 'colab') {
+                    lastEntry.colab = roundColab;
+                } else if (mode === 'prizes') {
+                    lastEntry.prize = roundPrize;
+                } else {
+                    lastEntry.colab = roundColab;
+                    lastEntry.prize = roundPrize;
+                }
+                lastEntry.time = timeStr;
+                appState.isRespinReplacement = false;
+            } else {
+                appState.winnersHistory.push({
+                    round: appState.winnersHistory.length + 1,
+                    colab: roundColab,
+                    prize: roundPrize,
+                    time: timeStr
+                });
+            }
+
+            const currentRoundNum = appState.winnersHistory.length;
+            const activeEntry = appState.winnersHistory[currentRoundNum - 1];
+            if (fixedText && activeEntry) {
+                if (appState.drawMode === 'colab') {
+                    fixedText.textContent = `Persona seleccionada: ${activeEntry.colab}`;
+                } else if (appState.drawMode === 'prizes') {
+                    fixedText.textContent = `Premio seleccionado: ${activeEntry.prize}`;
+                } else {
+                    fixedText.textContent = `${activeEntry.colab}  →  ${activeEntry.prize}`;
+                }
+            }
+            if (fixedRoundTag) {
+                fixedRoundTag.textContent = `Ronda #${currentRoundNum}`;
+            }
+
+            const autoRemove = document.getElementById('chkAutoRemove')?.checked ?? true;
+            if (autoRemove) {
+                if ((mode === 'both' || mode === 'colab') && appState.currentColabIdx >= 0) {
+                    appState.colabList.splice(appState.currentColabIdx, 1);
+                    appState.currentColabIdx = -1;
+                    appState.scrollOffsetColab = 0;
+                }
+                if ((mode === 'both' || mode === 'prizes') && appState.currentPrizeIdx >= 0) {
+                    appState.prizesList.splice(appState.currentPrizeIdx, 1);
+                    appState.currentPrizeIdx = -1;
+                    appState.scrollOffsetPrizes = 0;
+                }
+                syncTextareasFromState();
+                renderWheels();
+            }
+
+            updateCountersAndHistoryUI();
+            playWinFanfare();
+            triggerCelebrationConfetti();
+            openRoundModal(mode);
+
+            checkFinishedState();
+            setButtonsLock(false);
+            saveStateToStorage();
+        }
+// ... existing code ...
+        // Inicialización al cargar la página
+        window.addEventListener('DOMContentLoaded', () => {
+            const chkRemove = document.getElementById('chkAutoRemove');
+            if (chkRemove) {
+                chkRemove.addEventListener('change', saveStateToStorage);
+            }
+            loadStateFromStorage();
+        });
+
+        window.addEventListener('resize', () => {
+            renderWheels();
+        });
+    </script>
+</body>
+</html>
