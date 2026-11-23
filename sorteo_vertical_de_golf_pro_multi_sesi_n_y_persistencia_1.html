@@ -1,0 +1,2273 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sorteo Dual Pro — Tambores Verticales, Multi-Sesión y Persistencia</title>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Google Fonts: Plus Jakarta Sans & Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@700;800&display=swap" rel="stylesheet">
+
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+
+    <!-- Canvas Confetti -->
+    <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+    <!-- SheetJS (Importación y Exportación de Excel .xlsx / .xls / .csv) -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+
+    <!-- jsPDF & jsPDF-AutoTable (Generación nativa de PDF Ejecutivo Multipágina) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Plus Jakarta Sans', 'sans-serif'],
+                    }
+                }
+            }
+        };
+    </script>
+    <style>
+        :root {
+            --bg-base: #1b1f2a;
+            --glow-1: rgba(255, 122, 0, 0.14);
+            --glow-2: rgba(0, 174, 239, 0.12);
+            --accent-primary: #ff7a00;
+            --accent-secondary: #8dc63f;
+            --card-bg: #242936;
+            --card-border: rgba(255, 255, 255, 0.11);
+            --dot-color: rgba(255, 255, 255, 0.03);
+        }
+
+        body {
+            background-color: var(--bg-base);
+            background-image:
+                radial-gradient(ellipse 75% 45% at 50% -10%, var(--glow-1), transparent 70%),
+                radial-gradient(circle at 12% 85%, var(--glow-2), transparent 45%),
+                radial-gradient(circle at 88% 85%, rgba(236, 0, 140, 0.1), transparent 45%),
+                linear-gradient(to right, var(--dot-color) 1px, transparent 1px),
+                linear-gradient(to bottom, var(--dot-color) 1px, transparent 1px);
+            background-size: 100% 100%, 100% 100%, 100% 100%, 48px 48px, 48px 48px;
+            transition: background-color 0.5s ease;
+        }
+
+        .studio-glass {
+            background: var(--card-bg);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid var(--card-border);
+            box-shadow: 0 20px 50px -15px rgba(0, 0, 0, 0.65), inset 0 1px 0 0 rgba(255, 255, 255, 0.07);
+        }
+
+        .wheel-stage {
+            background: linear-gradient(180deg, #1f2430 0%, #181c26 100%);
+            border: 1px solid rgba(255, 255, 255, 0.09);
+            box-shadow: inset 0 2px 24px rgba(0, 0, 0, 0.55);
+        }
+
+        @keyframes pulse-ring {
+            0% { box-shadow: 0 0 0 0 rgba(255, 122, 0, 0.65); }
+            70% { box-shadow: 0 0 0 16px rgba(255, 122, 0, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 122, 0, 0); }
+        }
+        .btn-glow {
+            animation: pulse-ring 2.2s infinite;
+        }
+
+        @keyframes popIn {
+            0% { opacity: 0; transform: scale(0.92) translateY(12px); }
+            100% { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        .animate-pop-in {
+            animation: popIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #181c26;
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #ff7a00;
+            border-radius: 8px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #ff9429;
+        }
+    </style>
+</head>
+<body class="text-slate-100 min-h-screen flex flex-col antialiased selection:bg-orange-500/30 selection:text-orange-200">
+
+    <!-- BARRA SUPERIOR -->
+    <header class="studio-glass border-x-0 border-t-0 sticky top-0 z-30">
+        <div class="max-w-[1480px] mx-auto px-4 sm:px-6 min-h-16 py-2 flex flex-wrap items-center justify-between gap-3">
+
+            <!-- Identidad y Estado de Persistencia -->
+            <div class="flex items-center gap-3.5 min-w-0">
+                <div id="brandLogoBox" class="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FF7A00] via-[#EC008C] to-[#00AEEF] flex items-center justify-center text-white shadow-lg shadow-orange-950/50 ring-1 ring-white/20 shrink-0 transition-all duration-300">
+                    <i id="brandLogoIcon" class="fa-solid fa-golf-ball-tee text-xl"></i>
+                </div>
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <span class="font-display font-extrabold text-sm sm:text-base text-white tracking-tight truncate">SORTEO DUAL PRO</span>
+                        <span class="hidden lg:inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#FF7A00]/20 border border-[#FF7A00]/40 text-[#FF9E40] text-[10px] font-extrabold uppercase tracking-wider">
+                            <span class="w-1.5 h-1.5 rounded-full bg-[#FF7A00] animate-ping"></span> EN VIVO
+                        </span>
+                        <span title="Guardado automático local con vigencia de 7 días"
+                            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-[#8DC63F]/15 border border-[#8DC63F]/35 text-[#bef264] text-[10px] font-bold">
+                            <i class="fa-solid fa-cloud-check"></i>
+                            <span id="storageStatusText">Guardado (7d)</span>
+                        </span>
+                    </div>
+                    <p id="themeSubtitleText" class="text-[11px] text-slate-400 hidden sm:block mt-0.5">Tambores Verticales • Persistencia 7 Días • Multi-Sesión</p>
+                </div>
+            </div>
+
+            <!-- Controles Globales -->
+            <div class="flex items-center gap-2 sm:gap-2.5 shrink-0 flex-wrap">
+                <!-- Selector de Tema Visual -->
+                <div class="hidden sm:flex items-center gap-1.5 bg-[#1b1f2a] hover:bg-[#151821] border border-white/15 rounded-xl px-2.5 py-1.5 transition">
+                    <i class="fa-solid fa-palette text-xs text-[#FF7A00]"></i>
+                    <select id="themeSelector" onchange="applyTheme(this.value)" title="Seleccionar tema visual"
+                        class="bg-transparent text-xs sm:text-sm font-semibold text-slate-100 outline-none cursor-pointer pr-1">
+                        <option value="modern_ui" class="bg-[#1b1f2a] text-white">🎨 Dark UI Vibrante</option>
+                        <option value="golf" class="bg-[#1b1f2a] text-white">⛳ Torneo de Golf</option>
+                        <option value="corporate" class="bg-[#1b1f2a] text-white">Corporativo</option>
+                        <option value="gala" class="bg-[#1b1f2a] text-white">✨ Gala Dorada</option>
+                        <option value="neon" class="bg-[#1b1f2a] text-white">⚡ Noche Neón</option>
+                        <option value="minimal" class="bg-[#1b1f2a] text-white">📱 Minimalista iPad</option>
+                    </select>
+                </div>
+
+                <!-- Botón Exportar Excel Directo -->
+                <button type="button" onclick="exportWinnersToExcel()" title="Exportar resultados a Excel (.xlsx)"
+                    class="px-3.5 py-2 rounded-xl bg-[#00AEEF]/20 hover:bg-[#00AEEF]/35 border border-[#00AEEF]/45 text-[#7dd3fc] transition flex items-center gap-2 text-xs sm:text-sm font-bold shadow-sm">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <span class="hidden md:inline">Excel</span>
+                </button>
+
+                <!-- Botón Resumen Final / Acta PDF -->
+                <button type="button" onclick="openFinalSummaryModal(false)" id="btnOpenSummary"
+                    class="px-3.5 py-2 rounded-xl bg-[#8DC63F]/20 hover:bg-[#8DC63F]/30 border border-[#8DC63F]/45 text-[#b5e66e] transition flex items-center gap-2 text-xs sm:text-sm font-bold shadow-sm">
+                    <i class="fa-solid fa-file-pdf"></i>
+                    <span class="hidden md:inline">Acta PDF</span>
+                    <span id="summaryBadge" class="px-1.5 py-0.5 text-[11px] bg-[#8DC63F] text-slate-950 font-extrabold rounded-md">0</span>
+                </button>
+
+                <!-- Botón Sonido -->
+                <button type="button" onclick="toggleSound()" title="Activar / Silenciar Efectos"
+                    class="p-2.5 rounded-xl bg-[#1b1f2a] hover:bg-white/10 border border-white/15 text-slate-200 transition text-sm">
+                    <i id="soundIcon" class="fa-solid fa-volume-high text-[#00AEEF]"></i>
+                </button>
+
+                <!-- Botón Ocultar / Mostrar Panel Lateral -->
+                <button type="button" onclick="toggleConfigDrawer()" id="btnToggleDrawerText" title="Ocultar panel para enfocar los tambores al público"
+                    class="px-3.5 py-2 rounded-xl bg-[#FF7A00]/20 hover:bg-[#FF7A00]/35 border border-[#FF7A00]/45 text-[#ffaa5c] transition flex items-center gap-2 text-xs sm:text-sm font-bold shadow-sm">
+                    <i id="drawerToggleIcon" class="fa-solid fa-eye-slash"></i>
+                    <span class="hidden md:inline" id="drawerToggleLabel">Enfoque Sorteo</span>
+                </button>
+
+                <!-- Botón Pantalla Completa -->
+                <button type="button" onclick="toggleFullScreen()" title="Modo Proyección (Pantalla Completa)"
+                    class="p-2.5 rounded-xl bg-[#1b1f2a] hover:bg-white/10 border border-white/15 text-slate-200 transition text-sm hidden sm:inline-flex">
+                    <i id="fullscreenIcon" class="fa-solid fa-expand"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- CONTENEDOR PRINCIPAL -->
+    <main class="flex-1 max-w-[1480px] w-full mx-auto px-4 sm:px-6 py-5 flex flex-col xl:flex-row gap-6 items-start">
+        <section id="wheelsSection" class="w-full xl:flex-1 flex flex-col gap-5 transition-all duration-300">
+
+            <!-- GESTOR DE MÚLTIPLES SORTEOS / HORARIOS (EJ. 8:00 AM Y 9:00 AM) -->
+            <div class="studio-glass rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+                <div class="flex items-center gap-2.5 min-w-0 flex-1">
+                    <span class="inline-flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-[#38bdf8] shrink-0">
+                        <i class="fa-solid fa-calendar-days"></i> Sorteo / Sesión:
+                    </span>
+                    <select id="sessionSelector" onchange="switchSession(this.value)" title="Cambiar entre sorteos guardados"
+                        class="flex-1 max-w-md bg-[#1b1f2a] hover:bg-[#151821] border border-white/15 rounded-xl px-3 py-1.5 text-xs sm:text-sm font-bold text-white outline-none cursor-pointer transition truncate">
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2 shrink-0">
+                    <button type="button" onclick="createNewSession()" title="Crear un nuevo sorteo independiente (ej. sorteo de las 9:00 AM)"
+                        class="px-3 py-1.5 rounded-xl bg-[#8DC63F]/20 hover:bg-[#8DC63F]/35 border border-[#8DC63F]/45 text-[#bef264] text-xs font-bold transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-plus"></i>
+                        <span>Nuevo Sorteo</span>
+                    </button>
+                    <button type="button" onclick="duplicateCurrentSession()" title="Duplicar este sorteo con listas completas para otro horario"
+                        class="px-3 py-1.5 rounded-xl bg-[#00AEEF]/20 hover:bg-[#00AEEF]/35 border border-[#00AEEF]/45 text-[#7dd3fc] text-xs font-bold transition flex items-center gap-1.5">
+                        <i class="fa-solid fa-copy"></i>
+                        <span class="hidden sm:inline">Duplicar</span>
+                    </button>
+                    <button type="button" onclick="deleteCurrentSession()" title="Eliminar sesión actual"
+                        class="p-1.5 px-2.5 rounded-xl bg-[#1b1f2a] hover:bg-[#EC008C]/20 border border-white/10 hover:border-[#EC008C]/40 text-slate-400 hover:text-[#ff6ec4] text-xs transition">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Barra de Control de Estudio & Marcador de Ronda -->
+            <div class="studio-glass rounded-3xl p-4 sm:p-5 flex flex-col gap-4">
+                <div class="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3.5">
+                    <div class="flex items-center gap-2.5">
+                        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#FF7A00]/20 border border-[#FF7A00]/45 text-[#ffaa5c] text-xs font-bold">
+                            <span class="w-2 h-2 rounded-full bg-[#FF7A00] animate-pulse"></span>
+                            Ronda #<span id="currentRoundLabel" class="font-extrabold text-white">1</span>
+                        </span>
+                        <span id="reSpinBadge" class="hidden px-3 py-1 rounded-full bg-[#EC008C]/20 border border-[#EC008C]/45 text-[#ff6ec4] text-xs font-bold">
+                            <i class="fa-solid fa-rotate-right mr-1"></i>Giro Individual
+                        </span>
+                    </div>
+
+                    <!-- Controles de Modo, Tiempo y Descarte -->
+                    <div class="flex flex-wrap items-center gap-2.5">
+                        <!-- Selector de Modo de Sorteo -->
+                        <div class="flex items-center gap-1.5 bg-[#1b1f2a] px-3 py-1.5 rounded-full border border-white/10">
+                            <i class="fa-solid fa-sliders text-[#00AEEF] text-xs"></i>
+                            <span class="text-xs font-medium text-slate-300 hidden sm:inline">Modo:</span>
+                            <select id="drawModeSelector" onchange="updateDrawModeUI(this.value)"
+                                class="bg-transparent text-xs font-extrabold text-white outline-none cursor-pointer">
+                                <option value="both" class="bg-[#1b1f2a] text-white">Ambos (Persona + Premio)</option>
+                                <option value="colab" class="bg-[#1b1f2a] text-white">Solo Personas / Golfistas</option>
+                                <option value="prizes" class="bg-[#1b1f2a] text-white">Solo Premios</option>
+                            </select>
+                        </div>
+
+                        <!-- Control de Duración de Giro -->
+                        <div class="flex items-center gap-2 bg-[#1b1f2a] px-3 py-1.5 rounded-full border border-white/10">
+                            <i class="fa-solid fa-stopwatch text-[#FF7A00] text-xs" title="Duración del giro"></i>
+                            <span class="text-xs font-medium text-slate-300 hidden sm:inline">Tiempo:</span>
+                            <input type="range" id="spinDurationSlider" min="1.5" max="12" step="0.5" value="4.0"
+                                oninput="updateSpinDuration(this.value)"
+                                class="w-20 sm:w-24 accent-[#FF7A00] cursor-pointer h-1.5 bg-slate-800 rounded-lg">
+                            <span id="spinDurationLabel" class="text-xs font-extrabold text-[#FF7A00] w-9 text-right">4.0s</span>
+                            <div class="hidden md:flex items-center gap-1 ml-1 pl-2 border-l border-white/10">
+                                <button type="button" onclick="setSpinPreset(2)" class="px-2 py-0.5 rounded-full bg-white/5 hover:bg-[#FF7A00] text-[10px] font-bold text-slate-300 hover:text-white transition">2s</button>
+                                <button type="button" onclick="setSpinPreset(4)" class="px-2 py-0.5 rounded-full bg-white/5 hover:bg-[#FF7A00] text-[10px] font-bold text-slate-300 hover:text-white transition">4s</button>
+                                <button type="button" onclick="setSpinPreset(8)" class="px-2 py-0.5 rounded-full bg-white/5 hover:bg-[#FF7A00] text-[10px] font-bold text-slate-300 hover:text-white transition">8s</button>
+                            </div>
+                        </div>
+
+                        <label class="inline-flex items-center gap-2 cursor-pointer select-none bg-[#1b1f2a] hover:bg-[#151821] px-3.5 py-1.5 rounded-full border border-white/10 transition">
+                            <input type="checkbox" id="chkAutoRemove" checked class="w-4 h-4 accent-[#8DC63F] rounded cursor-pointer">
+                            <span class="text-xs font-medium text-slate-300">Descartar al salir</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Marcador Dual en Tiempo Real -->
+                <div id="scoreboardGrid" class="grid grid-cols-1 md:grid-cols-11 gap-3 items-stretch">
+                    <div id="scoreboardColabCard" class="md:col-span-5 bg-[#1b1f2a] border border-[#00AEEF]/35 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-inner">
+                        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-[#00AEEF] to-[#0284c7] text-white flex items-center justify-center shrink-0 text-lg shadow-md">
+                            <i class="fa-solid fa-user-golf"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <span class="text-[10px] font-extrabold uppercase tracking-widest text-[#38bdf8] block">Golfista / Persona</span>
+                            <p id="activeColabDisplay" class="font-display font-extrabold text-base sm:text-lg text-white truncate mt-0.5">— Esperando giro —</p>
+                        </div>
+                    </div>
+
+                    <div id="scoreboardCenterEmblem" class="md:col-span-1 flex items-center justify-center">
+                        <div class="w-9 h-9 rounded-full bg-gradient-to-br from-[#FF7A00] to-[#EC008C] text-white font-display font-black text-xs flex items-center justify-center shadow-lg ring-4 ring-[#1b1f2a]">
+                            <i class="fa-solid fa-flag"></i>
+                        </div>
+                    </div>
+
+                    <div id="scoreboardPrizeCard" class="md:col-span-5 bg-[#1b1f2a] border border-[#8DC63F]/35 rounded-2xl p-3.5 flex items-center gap-3.5 shadow-inner">
+                        <div class="w-11 h-11 rounded-xl bg-gradient-to-br from-[#8DC63F] to-[#65a30d] text-slate-950 flex items-center justify-center shrink-0 text-lg shadow-md">
+                            <i class="fa-solid fa-trophy"></i>
+                        </div>
+                        <div class="min-w-0 flex-1">
+                            <span class="text-[10px] font-extrabold uppercase tracking-widest text-[#a3e635] block">Premio del Torneo</span>
+                            <p id="activePrizeDisplay" class="font-display font-extrabold text-base sm:text-lg text-white truncate mt-0.5">— Esperando giro —</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ALERTA DE SORTEO FINALIZADO -->
+            <div id="finishedBanner" class="hidden bg-gradient-to-r from-[#FF7A00]/20 via-[#EC008C]/20 to-[#00AEEF]/20 border border-[#FF7A00]/50 rounded-3xl p-4 sm:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-xl backdrop-blur-md">
+                <div class="flex items-center gap-3.5 text-center sm:text-left">
+                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#FF7A00] to-[#EC008C] text-white flex items-center justify-center text-2xl shrink-0 shadow-md">
+                        🏆
+                    </div>
+                    <div>
+                        <h3 id="finishedBannerTitle" class="font-display font-extrabold text-lg text-white">¡Sorteo Finalizado! Se han entregado todos los premios</h3>
+                        <p class="text-xs sm:text-sm text-slate-300">Descarga el resultado completo en Excel o el Acta Oficial en PDF.</p>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2.5 shrink-0 flex-wrap justify-center">
+                    <button type="button" onclick="exportWinnersToExcel()" class="px-4 py-2.5 rounded-xl bg-[#00AEEF] hover:bg-[#38bdf8] text-slate-950 font-extrabold text-xs sm:text-sm transition shadow-md flex items-center gap-2">
+                        <i class="fa-solid fa-file-excel"></i> Excel
+                    </button>
+                    <button type="button" onclick="openFinalSummaryModal(true)" class="px-4 py-2.5 rounded-xl bg-[#8DC63F] hover:bg-[#9ed650] text-slate-950 font-extrabold text-xs sm:text-sm transition shadow-md flex items-center gap-2">
+                        <i class="fa-solid fa-file-pdf"></i> Acta PDF
+                    </button>
+                    <button type="button" onclick="restoreInitialLists()" class="px-3.5 py-2.5 rounded-xl bg-[#1b1f2a] hover:bg-slate-800 text-slate-200 font-semibold text-xs sm:text-sm border border-white/15 transition">
+                        Reiniciar
+                    </button>
+                </div>
+            </div>
+
+            <!-- ESCENARIO PRINCIPAL DE LOS TAMBORES VERTICALES -->
+            <div class="studio-glass rounded-[2rem] p-5 sm:p-7">
+
+                <!-- TÍTULO DEL SORTEO PROMINENTE ENCIMA DE LOS TAMBORES -->
+                <div class="mb-6 pb-5 border-b border-white/10 flex flex-col items-center text-center">
+                    <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/5 border border-white/10 text-[11px] font-bold uppercase tracking-widest text-[#FF7A00] mb-2.5">
+                        <i class="fa-solid fa-trophy text-xs"></i>
+                        <span>Título Oficial del Sorteo</span>
+                        <i class="fa-solid fa-pen text-[10px] text-slate-400 ml-1"></i>
+                    </div>
+                    <div class="w-full max-w-2xl relative group">
+                        <input id="eventTitleInput" type="text" value="Torneo de Golf Anual 2026 - 8:00 AM"
+                            oninput="onEventTitleChange(this.value)"
+                            placeholder="Escribe aquí el nombre del sorteo..."
+                            title="Haz clic para editar el título del sorteo"
+                            class="w-full bg-[#1b1f2a]/90 hover:bg-[#151821] focus:bg-[#141720] font-display font-extrabold text-xl sm:text-3xl text-center text-white px-5 py-3 rounded-2xl border border-white/15 hover:border-[#FF7A00]/50 focus:border-[#FF7A00] focus:ring-4 focus:ring-[#FF7A00]/15 outline-none transition shadow-inner">
+                    </div>
+                    <div class="mt-3 flex items-center justify-center gap-2">
+                        <span class="w-8 h-1 rounded-full bg-[#FF7A00]"></span>
+                        <span class="w-8 h-1 rounded-full bg-[#8DC63F]"></span>
+                        <span class="w-8 h-1 rounded-full bg-[#00AEEF]"></span>
+                        <span class="w-8 h-1 rounded-full bg-[#EC008C]"></span>
+                    </div>
+                </div>
+
+                <!-- CONTENEDOR DE TAMBORES VERTICALES (ABAJO -> ARRIBA) -->
+                <div id="drumsGrid" class="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 items-center">
+
+                    <!-- TAMBOR 1: GOLFISTAS -->
+                    <div id="drumStageColab" class="wheel-stage rounded-3xl p-4 sm:p-6 flex flex-col items-center relative overflow-hidden w-full">
+                        <div class="w-full flex items-center justify-between mb-3 z-10">
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-7 h-7 rounded-lg bg-[#00AEEF]/20 border border-[#00AEEF]/40 text-[#38bdf8] font-display font-extrabold text-xs flex items-center justify-center">01</span>
+                                <h2 class="font-display font-extrabold text-base sm:text-lg text-white tracking-tight">Golfistas / Personas</h2>
+                            </div>
+                            <span class="px-3 py-1 rounded-full bg-[#00AEEF]/15 border border-[#00AEEF]/35 text-[#7dd3fc] text-xs font-bold">
+                                <span id="countColabBadge">0</span> activos
+                            </span>
+                        </div>
+
+                        <!-- Canvas Tambor Vertical Colaboradores -->
+                        <div class="relative w-full max-w-[390px] aspect-square flex items-center justify-center my-1">
+                            <canvas id="canvasColab" class="w-full h-full"></canvas>
+                        </div>
+
+                        <!-- Indicador en vivo bajo el tambor -->
+                        <div class="mt-3 w-full bg-[#151821] border border-white/10 rounded-xl py-2 px-3 text-center">
+                            <div id="liveTickerColab" class="h-5 text-xs sm:text-sm font-bold text-[#38bdf8] truncate">
+                                Listo para desplazarse hacia arriba
+                            </div>
+                        </div>
+
+                        <!-- Botón Individual -->
+                        <button type="button" id="btnSpinColabOnly" onclick="spinWheels('colab')"
+                            title="Sortear solo un participante"
+                            class="mt-3 w-full py-2.5 px-4 rounded-xl bg-[#242936] hover:bg-[#00AEEF]/25 border border-white/15 hover:border-[#00AEEF]/50 text-[#7dd3fc] hover:text-white font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i class="fa-solid fa-user-rotate"></i>
+                            <span>Sortear Solo Personas</span>
+                        </button>
+                    </div>
+
+                    <!-- TAMBOR 2: PREMIOS -->
+                    <div id="drumStagePrizes" class="wheel-stage rounded-3xl p-4 sm:p-6 flex flex-col items-center relative overflow-hidden w-full">
+                        <div class="w-full flex items-center justify-between mb-3 z-10">
+                            <div class="flex items-center gap-2.5">
+                                <span class="w-7 h-7 rounded-lg bg-[#8DC63F]/20 border border-[#8DC63F]/40 text-[#a3e635] font-display font-extrabold text-xs flex items-center justify-center">02</span>
+                                <h2 class="font-display font-extrabold text-base sm:text-lg text-white tracking-tight">Premios del Torneo</h2>
+                            </div>
+                            <span class="px-3 py-1 rounded-full bg-[#8DC63F]/15 border border-[#8DC63F]/35 text-[#bef264] text-xs font-bold">
+                                <span id="countPrizesBadge">0</span> disponibles
+                            </span>
+                        </div>
+
+                        <!-- Canvas Tambor Vertical Premios -->
+                        <div class="relative w-full max-w-[390px] aspect-square flex items-center justify-center my-1">
+                            <canvas id="canvasPrizes" class="w-full h-full"></canvas>
+                        </div>
+
+                        <!-- Indicador en vivo bajo el tambor -->
+                        <div class="mt-3 w-full bg-[#151821] border border-white/10 rounded-xl py-2 px-3 text-center">
+                            <div id="liveTickerPrizes" class="h-5 text-xs sm:text-sm font-bold text-[#a3e635] truncate">
+                                Listo para desplazarse hacia arriba
+                            </div>
+                        </div>
+
+                        <!-- Botón Individual -->
+                        <button type="button" id="btnSpinPrizesOnly" onclick="spinWheels('prizes')"
+                            title="Sortear solo un premio"
+                            class="mt-3 w-full py-2.5 px-4 rounded-xl bg-[#242936] hover:bg-[#8DC63F]/25 border border-white/15 hover:border-[#8DC63F]/50 text-[#bef264] hover:text-white font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed">
+                            <i class="fa-solid fa-gift"></i>
+                            <span>Sortear Solo Premios</span>
+                        </button>
+                    </div>
+
+                </div>
+
+                <!-- CONSOLA DE DISPARO CENTRAL Y RECUADRO FIJO DE SELECCIÓN -->
+                <div class="mt-7 pt-5 border-t border-white/10 flex flex-col items-center gap-4">
+                    <div class="flex flex-wrap items-center justify-center gap-3 w-full">
+                        <button type="button" id="btnSpinBoth" onclick="spinWheels(getSelectedDrawMode())"
+                            class="btn-glow w-full sm:w-auto min-w-[320px] px-10 py-4 rounded-2xl bg-gradient-to-r from-[#FF7A00] via-[#ff6200] to-[#EC008C] hover:from-[#ff8c1a] hover:to-[#ff1a9e] text-white font-display font-extrabold text-lg sm:text-xl shadow-2xl shadow-orange-950/60 ring-1 ring-white/25 transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-45 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-3">
+                            <i class="fa-solid fa-arrow-up"></i>
+                            <span id="btnMainSpinLabel">GIRAR AMBOS TAMBORES</span>
+                        </button>
+
+                        <button type="button" onclick="exportWinnersToExcel()" title="Exportar resultados de la rifa a Excel (.xlsx)"
+                            class="px-5 py-4 rounded-2xl bg-[#8DC63F]/20 hover:bg-[#8DC63F]/35 border border-[#8DC63F]/50 text-[#bef264] font-display font-extrabold text-sm sm:text-base transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-file-excel text-lg"></i>
+                            <span>Exportar Excel</span>
+                        </button>
+                    </div>
+
+                    <!-- RECUADRO FIJO SIEMPRE VISIBLE CON EL PREMIO Y SELECCIÓN ACTUAL -->
+                    <div id="fixedSelectionBox" class="w-full max-w-3xl bg-[#1b1f2a] border-2 border-[#8DC63F]/45 rounded-2xl p-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-lg">
+                        <div class="flex items-center gap-3 min-w-0">
+                            <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-[#FF7A00] to-[#8DC63F] text-slate-950 flex items-center justify-center text-lg shrink-0 shadow">
+                                <i class="fa-solid fa-award"></i>
+                            </div>
+                            <div class="min-w-0 text-center sm:text-left">
+                                <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#a3e635] block">Resultado / Premio Seleccionado</span>
+                                <p id="fixedSelectionText" class="font-display font-extrabold text-base sm:text-lg text-white truncate">Listo para iniciar el sorteo</p>
+                            </div>
+                        </div>
+                        <span id="fixedSelectionRoundTag" class="px-3 py-1 rounded-full bg-white/5 border border-white/10 text-xs font-bold text-slate-300 shrink-0">
+                            En espera
+                        </span>
+                    </div>
+
+                    <p id="mainValidationMsg" class="text-xs text-[#ff6ec4] font-medium h-4 text-center"></p>
+                </div>
+            </div>
+        </section>
+
+        <!-- PANEL LATERAL: IMPORTACIÓN EXCEL, LISTAS E HISTORIAL -->
+        <aside id="configDrawer" class="w-full xl:w-[415px] studio-glass rounded-3xl overflow-hidden flex flex-col shrink-0 transition-all duration-300">
+
+            <!-- Navegación por Pestañas -->
+            <div class="grid grid-cols-2 p-2 bg-[#1b1f2a] border-b border-white/10 gap-1.5">
+                <button type="button" id="tabBtnConfig" onclick="switchDrawerTab('config')"
+                    class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 bg-[#FF7A00] text-white shadow">
+                    <i class="fa-solid fa-file-excel"></i>
+                    <span>Listas y Excel</span>
+                </button>
+                <button type="button" id="tabBtnHistory" onclick="switchDrawerTab('history')"
+                    class="py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-trophy text-[#8DC63F]"></i>
+                    <span>Historial (<span id="drawerHistoryCount">0</span>)</span>
+                </button>
+            </div>
+
+            <!-- PESTAÑA 1: GESTIÓN DE LISTAS E IMPORTACIÓN EXCEL -->
+            <div id="drawerTabConfig" class="p-5 flex flex-col gap-5">
+
+                <!-- Barra de Plantilla Excel -->
+                <div class="bg-[#1b1f2a] border border-white/10 rounded-2xl p-3.5 flex items-center justify-between gap-3">
+                    <div>
+                        <p class="text-xs font-bold text-slate-200">Carga masiva o manual</p>
+                        <p class="text-[11px] text-slate-400">Soporta .xlsx, .xls y .csv</p>
+                    </div>
+                    <button type="button" onclick="downloadExcelTemplate()"
+                        class="px-3 py-2 rounded-xl bg-[#8DC63F]/20 hover:bg-[#8DC63F]/35 border border-[#8DC63F]/45 text-[#bef264] text-xs font-bold transition flex items-center gap-1.5 shrink-0">
+                        <i class="fa-solid fa-download"></i> Plantilla .xlsx
+                    </button>
+                </div>
+
+                <!-- BLOQUE 1: COLABORADORES / GOLFISTAS -->
+                <div class="bg-[#1b1f2a] border border-[#00AEEF]/25 rounded-2xl p-3.5">
+                    <div class="flex items-center justify-between mb-2">
+                        <label for="txtColab" class="text-xs font-bold uppercase tracking-wider text-[#38bdf8] flex items-center gap-1.5">
+                            <i class="fa-solid fa-users"></i> Golfistas / Personas (<span id="lblCountColab">0</span>)
+                        </label>
+                        <div class="flex items-center gap-1.5">
+                            <input type="file" id="fileExcelColab" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleExcelImport(event, 'colab')">
+                            <button type="button" onclick="document.getElementById('fileExcelColab').click()"
+                                class="px-2.5 py-1 rounded-lg bg-[#00AEEF]/20 hover:bg-[#00AEEF]/35 border border-[#00AEEF]/45 text-[#7dd3fc] text-xs font-bold transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-file-import"></i> Excel
+                            </button>
+                            <button type="button" onclick="shuffleList('colab')" title="Mezclar lista"
+                                class="p-1.5 rounded-lg bg-[#242936] hover:bg-slate-700 text-slate-300 text-xs transition border border-white/10">
+                                <i class="fa-solid fa-shuffle"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="txtColab" rows="5" oninput="syncFromTextareas()" placeholder="Escribe o pega un participante por línea..."
+                        class="w-full rounded-xl bg-[#151821] border border-white/10 focus:border-[#00AEEF] p-2.5 text-xs sm:text-sm text-slate-200 outline-none transition resize-y leading-relaxed"></textarea>
+                </div>
+
+                <!-- BLOQUE 2: PREMIOS -->
+                <div class="bg-[#1b1f2a] border border-[#8DC63F]/25 rounded-2xl p-3.5">
+                    <div class="flex items-center justify-between mb-2">
+                        <label for="txtPrizes" class="text-xs font-bold uppercase tracking-wider text-[#a3e635] flex items-center gap-1.5">
+                            <i class="fa-solid fa-gift"></i> Premios (<span id="lblCountPrizes">0</span>)
+                        </label>
+                        <div class="flex items-center gap-1.5">
+                            <input type="file" id="fileExcelPrizes" accept=".xlsx,.xls,.csv" class="hidden" onchange="handleExcelImport(event, 'prizes')">
+                            <button type="button" onclick="document.getElementById('fileExcelPrizes').click()"
+                                class="px-2.5 py-1 rounded-lg bg-[#8DC63F]/20 hover:bg-[#8DC63F]/35 border border-[#8DC63F]/45 text-[#bef264] text-xs font-bold transition flex items-center gap-1.5">
+                                <i class="fa-solid fa-file-import"></i> Excel
+                            </button>
+                            <button type="button" onclick="shuffleList('prizes')" title="Mezclar lista"
+                                class="p-1.5 rounded-lg bg-[#242936] hover:bg-slate-700 text-slate-300 text-xs transition border border-white/10">
+                                <i class="fa-solid fa-shuffle"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <textarea id="txtPrizes" rows="5" oninput="syncFromTextareas()" placeholder="Escribe o pega un premio por línea..."
+                        class="w-full rounded-xl bg-[#151821] border border-white/10 focus:border-[#8DC63F] p-2.5 text-xs sm:text-sm text-slate-200 outline-none transition resize-y leading-relaxed"></textarea>
+                </div>
+
+                <!-- Acciones Rápidas de Listas -->
+                <div class="flex items-center justify-between pt-1 border-t border-white/10">
+                    <button type="button" onclick="restoreInitialLists()" class="text-xs font-semibold text-slate-400 hover:text-[#FF7A00] flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-rotate-left"></i> Restaurar originales
+                    </button>
+                    <button type="button" onclick="clearAllLists()" class="text-xs font-semibold text-[#EC008C] hover:text-[#ff6ec4] flex items-center gap-1.5 transition">
+                        <i class="fa-solid fa-trash-can"></i> Vaciar todo
+                    </button>
+                </div>
+            </div>
+
+            <!-- PESTAÑA 2: HISTORIAL DE GANADORES EN VIVO -->
+            <div id="drawerTabHistory" class="p-5 hidden flex-col gap-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-bold uppercase tracking-wider text-slate-400">Ganadores del Sorteo</span>
+                    <div class="flex items-center gap-1.5">
+                        <button type="button" onclick="exportWinnersToExcel()"
+                            class="px-2.5 py-1.5 rounded-lg bg-[#00AEEF] hover:bg-[#38bdf8] text-slate-950 text-xs font-extrabold transition flex items-center gap-1 shadow">
+                            <i class="fa-solid fa-file-excel"></i> Excel
+                        </button>
+                        <button type="button" onclick="openFinalSummaryModal(false)"
+                            class="px-2.5 py-1.5 rounded-lg bg-[#FF7A00] hover:bg-[#ff8c1a] text-white text-xs font-bold transition flex items-center gap-1 shadow">
+                            <i class="fa-solid fa-file-pdf"></i> PDF
+                        </button>
+                    </div>
+                </div>
+
+                <div id="historyContainer" class="max-h-[410px] overflow-y-auto flex flex-col gap-2.5 pr-1">
+                    <!-- Renderizado dinámico -->
+                </div>
+
+                <button type="button" id="btnClearHistory" onclick="resetEntireHistory()" class="hidden w-full py-2 rounded-xl border border-[#EC008C]/40 text-[#ff6ec4] hover:bg-[#EC008C]/10 text-xs font-semibold transition">
+                    Reiniciar historial de ganadores
+                </button>
+            </div>
+
+        </aside>
+    </main>
+
+    <!-- MODAL 1: RESULTADO DE RONDA -->
+    <div id="roundWinnerModal" class="fixed inset-0 z-50 hidden items-center justify-center p-4 bg-[#141720]/85 backdrop-blur-md">
+        <div class="animate-pop-in relative w-full max-w-lg bg-[#242936] border border-white/15 rounded-3xl shadow-2xl overflow-hidden">
+
+            <div class="bg-gradient-to-r from-[#FF7A00] via-[#EC008C] to-[#00AEEF] pt-7 pb-9 px-6 text-center text-white relative">
+                <button type="button" onclick="closeRoundModal()" class="absolute top-4 right-4 w-8 h-8 rounded-full bg-black/25 hover:bg-black/40 flex items-center justify-center text-white transition">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
+                <span id="modalSpinTypeTag" class="inline-block px-3 py-1 rounded-full bg-black/25 text-[11px] font-extrabold uppercase tracking-wider mb-2">
+                    Ronda #<span id="modalRoundNumber">1</span>
+                </span>
+                <h3 class="font-display font-extrabold text-2xl sm:text-3xl">¡Resultado Confirmado!</h3>
+            </div>
+
+            <div class="px-6 pb-6 -mt-5">
+                <div class="bg-[#1b1f2a] border border-white/10 rounded-2xl p-5 flex flex-col gap-3.5 shadow-xl">
+
+                    <div id="modalColabCard" class="bg-[#00AEEF]/10 border border-[#00AEEF]/35 rounded-xl p-3.5 text-center">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-[#38bdf8] block mb-1">Golfista / Persona</span>
+                        <p id="modalWinnerColab" class="font-display font-extrabold text-xl sm:text-2xl text-white break-words">—</p>
+                    </div>
+
+                    <div id="modalCenterDivider" class="flex items-center justify-center -my-2 z-10">
+                        <span class="w-8 h-8 rounded-full bg-gradient-to-br from-[#FF7A00] to-[#EC008C] text-white flex items-center justify-center shadow-md text-sm">
+                            <i class="fa-solid fa-trophy"></i>
+                        </span>
+                    </div>
+
+                    <div id="modalPrizeCard" class="bg-[#8DC63F]/10 border border-[#8DC63F]/35 rounded-xl p-3.5 text-center">
+                        <span class="text-[10px] font-bold uppercase tracking-widest text-[#a3e635] block mb-1">Premio Obtenido</span>
+                        <p id="modalWinnerPrize" class="font-display font-extrabold text-xl sm:text-2xl text-[#bef264] break-words">—</p>
+                    </div>
+                </div>
+
+                <div class="mt-5 flex flex-col gap-2.5">
+                    <button type="button" onclick="closeRoundModal()"
+                        class="w-full py-3.5 px-5 rounded-xl bg-[#8DC63F] hover:bg-[#9ed650] text-slate-950 font-display font-extrabold text-sm sm:text-base transition shadow-lg flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-circle-check"></i>
+                        <span>Confirmar y Continuar Sorteo</span>
+                    </button>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                        <button type="button" id="btnModalRespinColab" onclick="handleAbsenceRespin('colab')"
+                            class="py-2.5 px-3 rounded-xl bg-[#1b1f2a] hover:bg-[#00AEEF]/20 border border-white/10 hover:border-[#00AEEF]/50 text-[#7dd3fc] text-xs font-bold transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-user-xmark"></i>
+                            <span>No está presente (Re-girar persona)</span>
+                        </button>
+                        <button type="button" id="btnModalRespinPrize" onclick="handleAbsenceRespin('prizes')"
+                            class="py-2.5 px-3 rounded-xl bg-[#1b1f2a] hover:bg-[#FF7A00]/20 border border-white/10 hover:border-[#FF7A00]/50 text-[#ffaa5c] text-xs font-bold transition flex items-center justify-center gap-1.5">
+                            <i class="fa-solid fa-rotate"></i>
+                            <span>Cambiar solo premio</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL 2: PANTALLA EJECUTIVA DE RESUMEN FINAL Y EXPORTACIÓN A EXCEL / PDF -->
+    <div id="finalSummaryModal" class="fixed inset-0 z-50 hidden items-center justify-center p-3 sm:p-6 bg-slate-950/85 backdrop-blur-md">
+        <div class="animate-pop-in relative w-full max-w-4xl max-h-[92vh] bg-slate-900 border border-emerald-500/40 rounded-3xl shadow-2xl flex flex-col overflow-hidden">
+
+            <div class="p-5 sm:p-6 bg-gradient-to-r from-slate-900 via-emerald-950/60 to-slate-900 border-b border-emerald-500/20 flex items-center justify-between gap-4 shrink-0">
+                <div class="flex items-center gap-3.5">
+                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-600 text-slate-950 flex items-center justify-center text-2xl shadow-lg shrink-0">
+                        <i class="fa-solid fa-trophy"></i>
+                    </div>
+                    <div>
+                        <span id="finalStatusBadge" class="inline-block px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider mb-1">
+                            Acta Oficial del Sorteo
+                        </span>
+                        <h2 id="finalModalTitle" class="font-display font-extrabold text-xl sm:text-2xl text-white">Resultados de Premiación</h2>
+                        <p id="finalModalDate" class="text-xs text-slate-400 mt-0.5">Fecha: —</p>
+                    </div>
+                </div>
+
+                <button type="button" onclick="closeFinalSummaryModal()" class="w-9 h-9 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition shrink-0">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+
+            <div class="px-5 sm:px-6 py-4 bg-slate-950/60 border-b border-slate-800 grid grid-cols-3 gap-3 shrink-0">
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
+                    <span class="text-[11px] text-slate-400 font-semibold block">Rondas Realizadas</span>
+                    <strong id="metricTotalWon" class="font-display font-extrabold text-xl sm:text-2xl text-emerald-400">0</strong>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
+                    <span class="text-[11px] text-slate-400 font-semibold block">Premios Restantes</span>
+                    <strong id="metricPrizesLeft" class="font-display font-extrabold text-xl sm:text-2xl text-amber-400">0</strong>
+                </div>
+                <div class="bg-slate-900 border border-slate-800 rounded-xl p-3 text-center">
+                    <span class="text-[11px] text-slate-400 font-semibold block">Personas Restantes</span>
+                    <strong id="metricColabLeft" class="font-display font-extrabold text-xl sm:text-2xl text-emerald-400">0</strong>
+                </div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-5 sm:p-6">
+                <div class="border border-slate-800 rounded-2xl overflow-hidden bg-slate-950/50">
+                    <table class="w-full text-left border-collapse">
+                        <thead>
+                            <tr class="bg-slate-800/80 text-slate-300 text-xs uppercase tracking-wider border-b border-slate-700">
+                                <th class="py-3.5 px-4 font-bold w-20">Ronda</th>
+                                <th class="py-3.5 px-4 font-bold">Golfista / Persona</th>
+                                <th class="py-3.5 px-4 font-bold">Premio Obtenido</th>
+                                <th class="py-3.5 px-4 font-bold text-right w-28">Hora</th>
+                            </tr>
+                        </thead>
+                        <tbody id="finalWinnersTableBody" class="divide-y divide-slate-800/80 text-sm">
+                            <!-- Filas dinámicas -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="p-4 sm:p-5 bg-slate-950 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
+                <button type="button" onclick="closeFinalSummaryModal()" class="w-full sm:w-auto px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs sm:text-sm transition">
+                    Volver al Sorteo
+                </button>
+
+                <div class="w-full sm:w-auto flex flex-col sm:flex-row items-center gap-2.5">
+                    <button type="button" onclick="exportWinnersToExcel()"
+                        class="w-full sm:w-auto px-5 py-3 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/40 text-emerald-300 font-bold text-xs sm:text-sm transition flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-file-excel"></i>
+                        <span>Exportar Excel (.xlsx)</span>
+                    </button>
+
+                    <button type="button" onclick="exportWinnersToPDF()"
+                        class="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-green-700 hover:from-emerald-500 hover:to-green-600 text-white font-display font-extrabold text-xs sm:text-sm transition shadow-lg shadow-emerald-900/30 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-file-pdf text-base"></i>
+                        <span>Exportar Acta Oficial a PDF</span>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- NOTIFICACIÓN TOAST -->
+    <div id="toast" class="fixed bottom-5 right-5 z-[60] transform translate-y-24 opacity-0 transition-all duration-300 pointer-events-none">
+        <div class="bg-slate-800 border border-emerald-500/40 text-white px-4 py-3 rounded-2xl shadow-2xl flex items-center gap-3 text-xs sm:text-sm font-semibold">
+            <i id="toastIcon" class="fa-solid fa-circle-check text-emerald-400 text-base"></i>
+            <span id="toastText">Notificación</span>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================================
+         * DATOS INICIALES, TEMAS VISUALES Y PERSISTENCIA POR 7 DÍAS
+         * ============================================================================
+         */
+        const STORAGE_KEY = 'sorteo_dual_pro_vertical_sessions_v1';
+        const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+        const ROW_HEIGHT = 64;
+
+        const SAMPLE_COLAB = [
+            "Alejandro Garza (Hándicap 4)",
+            "Carlos Mendoza (Hándicap 6)",
+            "Ricardo Salinas (Hándicap 8)",
+            "Sofía Ramírez (Hándicap 10)",
+            "Jorge Hank (Hándicap 12)",
+            "Bernardo Gómez (Hándicap 14)",
+            "Fernando Ortega (Hándicap 16)",
+            "Rodrigo Herrera (Hándicap 18)"
+        ];
+
+        const SAMPLE_PRIZES = [
+            "Driver Titleist GT3 Pro",
+            "Set de Fierros TaylorMade P790",
+            "Bolsa de Golf Callaway Staff",
+            "Putter Scotty Cameron Special",
+            "Caja de 12 Pelotas Titleist Pro V1",
+            "Clínica de Golf con Profesional PGA",
+            "Green Fee para 4 Jugadores en Club VIP"
+        ];
+
+        const THEMES = {
+            modern_ui: {
+                name: "Dark UI Vibrante",
+                bgBase: "#1b1f2a",
+                glow1: "rgba(255, 122, 0, 0.14)",
+                glow2: "rgba(0, 174, 239, 0.12)",
+                dotColor: "rgba(255, 255, 255, 0.03)",
+                logoGradient: "from-[#FF7A00] via-[#EC008C] to-[#00AEEF]",
+                logoIcon: "fa-solid fa-golf-ball-tee text-xl",
+                subtitle: "Tambores Verticales • Persistencia 7 Días • Multi-Sesión",
+                colabPalette: ["#00AEEF", "#0284c7", "#0369a1", "#0ea5e9", "#2563eb", "#0891b2"],
+                prizesPalette: ["#FF7A00", "#8DC63F", "#EC008C", "#ea580c", "#65a30d", "#db2777"],
+                colabIcon: "🏌️",
+                prizeIcon: "🏆",
+                pointerColor: "#FF7A00",
+                colabAccent: "#00AEEF",
+                confettiColors: ["#FF7A00", "#8DC63F", "#00AEEF", "#EC008C", "#ffffff"]
+            },
+            golf: {
+                name: "Torneo de Golf",
+                bgBase: "#06150e",
+                glow1: "rgba(22, 163, 74, 0.22)",
+                glow2: "rgba(217, 119, 6, 0.16)",
+                dotColor: "#143826",
+                logoGradient: "from-emerald-600 via-green-700 to-amber-600",
+                logoIcon: "fa-solid fa-golf-ball-tee text-xl",
+                subtitle: "Edición Torneo de Golf & Club de Campo",
+                colabPalette: ["#15803d", "#166534", "#047857", "#0f766e", "#14532d", "#065f46"],
+                prizesPalette: ["#b45309", "#d97706", "#ca8a04", "#92400e", "#a16207", "#78350f"],
+                colabIcon: "🏌️",
+                prizeIcon: "⛳",
+                pointerColor: "#eab308",
+                colabAccent: "#34d399",
+                confettiColors: ["#16a34a", "#eab308", "#ffffff", "#059669", "#f59e0b"]
+            },
+            corporate: {
+                name: "Corporativo",
+                bgBase: "#090d16",
+                glow1: "rgba(99, 102, 241, 0.14)",
+                glow2: "rgba(16, 185, 129, 0.12)",
+                dotColor: "#1e293b",
+                logoGradient: "from-indigo-500 via-violet-600 to-fuchsia-600",
+                logoIcon: "fa-solid fa-dharmachakra text-xl",
+                subtitle: "Control dual en vivo • Excel y Acta PDF",
+                colabPalette: ["#4f46e5", "#0284c7", "#7c3aed", "#2563eb", "#0d9488", "#4338ca"],
+                prizesPalette: ["#059669", "#d97706", "#e11d48", "#ea580c", "#16a34a", "#ca8a04"],
+                colabIcon: "👤",
+                prizeIcon: "🎁",
+                pointerColor: "#f43f5e",
+                colabAccent: "#38bdf8",
+                confettiColors: ["#6366f1", "#10b981", "#f59e0b", "#ec4899", "#38bdf8"]
+            },
+            gala: {
+                name: "Gala Dorada",
+                bgBase: "#120e08",
+                glow1: "rgba(234, 179, 8, 0.16)",
+                glow2: "rgba(180, 83, 9, 0.14)",
+                dotColor: "#292014",
+                logoGradient: "from-amber-400 via-yellow-600 to-amber-800",
+                logoIcon: "fa-solid fa-crown text-xl",
+                subtitle: "Edición Gala VIP & Premiación Anual",
+                colabPalette: ["#1e293b", "#334155", "#78350f", "#92400e", "#451a03", "#3f3f46"],
+                prizesPalette: ["#d97706", "#ca8a04", "#b45309", "#eab308", "#a16207", "#f59e0b"],
+                colabIcon: "🥂",
+                prizeIcon: "🏆",
+                pointerColor: "#fbbf24",
+                colabAccent: "#f59e0b",
+                confettiColors: ["#fbbf24", "#f59e0b", "#fef08a", "#ffffff", "#d97706"]
+            },
+            neon: {
+                name: "Noche Neón",
+                bgBase: "#070514",
+                glow1: "rgba(236, 72, 153, 0.18)",
+                glow2: "rgba(6, 182, 212, 0.16)",
+                dotColor: "#261847",
+                logoGradient: "from-fuchsia-500 via-purple-600 to-cyan-500",
+                logoIcon: "fa-solid fa-bolt text-xl",
+                subtitle: "Edición Fiesta & Celebración Nocturna",
+                colabPalette: ["#c026d3", "#7c3aed", "#0284c7", "#db2777", "#4f46e5", "#0891b2"],
+                prizesPalette: ["#06b6d4", "#ec4899", "#8b5cf6", "#10b981", "#f43f5e", "#3b82f6"],
+                colabIcon: "⚡",
+                prizeIcon: "💎",
+                pointerColor: "#22d3ee",
+                colabAccent: "#e879f9",
+                confettiColors: ["#22d3ee", "#e879f9", "#f43f5e", "#a855f7", "#34d399"]
+            },
+            minimal: {
+                name: "Minimalista iPad",
+                bgBase: "#0f172a",
+                glow1: "rgba(100, 116, 139, 0.12)",
+                glow2: "rgba(71, 85, 105, 0.1)",
+                dotColor: "#1e293b",
+                logoGradient: "from-slate-700 via-slate-600 to-slate-800",
+                logoIcon: "fa-solid fa-tablet-screen-button text-xl",
+                subtitle: "Optimizado para Tablet iPad (Vertical)",
+                colabPalette: ["#334155", "#475569", "#1e293b", "#2563eb"],
+                prizesPalette: ["#059669", "#0d9488", "#0284c7", "#4f46e5"],
+                colabIcon: "👤",
+                prizeIcon: "🏆",
+                pointerColor: "#38bdf8",
+                colabAccent: "#60a5fa",
+                confettiColors: ["#38bdf8", "#94a3b8", "#cbd5e1", "#ffffff"]
+            }
+        };
+
+        function generateSessionId() {
+            return 'ses_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
+        }
+
+        const initialNow = Date.now();
+        const defaultSessionId = generateSessionId();
+
+        const appState = {
+            activeSessionId: defaultSessionId,
+            sessions: {
+                [defaultSessionId]: {
+                    id: defaultSessionId,
+                    title: 'Torneo de Golf Anual 2026 - 8:00 AM',
+                    createdAt: initialNow,
+                    updatedAt: initialNow,
+                    expiresAt: initialNow + SEVEN_DAYS_MS,
+                    colabList: [...SAMPLE_COLAB],
+                    prizesList: [...SAMPLE_PRIZES],
+                    backupColab: [...SAMPLE_COLAB],
+                    backupPrizes: [...SAMPLE_PRIZES],
+                    winnersHistory: [],
+                    drawMode: 'both',
+                    currentTheme: 'modern_ui',
+                    spinDurationSec: 4.0,
+                    autoRemove: true,
+                    currentColab: null,
+                    currentPrize: null,
+                    lastWinnerColab: null,
+                    lastWinnerPrize: null
+                }
+            },
+            colabList: [...SAMPLE_COLAB],
+            prizesList: [...SAMPLE_PRIZES],
+            backupColab: [...SAMPLE_COLAB],
+            backupPrizes: [...SAMPLE_PRIZES],
+            currentTheme: 'modern_ui',
+            currentColab: null,
+            currentPrize: null,
+            currentColabIdx: -1,
+            currentPrizeIdx: -1,
+            winnersHistory: [],
+            isSpinning: false,
+            soundEnabled: true,
+            drawerOpen: true,
+            spinDurationSec: 4.0,
+            scrollOffsetColab: 0,
+            scrollOffsetPrizes: 0,
+            lastWinnerColab: null,
+            lastWinnerPrize: null,
+            drawMode: 'both',
+            isFinished: false,
+            isRespinReplacement: false
+        };
+
+        function saveStateToStorage() {
+            try {
+                const now = Date.now();
+                const existing = appState.sessions[appState.activeSessionId];
+                const createdAt = existing?.createdAt || now;
+                const titleVal = document.getElementById('eventTitleInput')?.value.trim() || existing?.title || 'Torneo de Golf';
+
+                appState.sessions[appState.activeSessionId] = {
+                    id: appState.activeSessionId,
+                    title: titleVal,
+                    createdAt,
+                    updatedAt: now,
+                    expiresAt: createdAt + SEVEN_DAYS_MS,
+                    colabList: [...appState.colabList],
+                    prizesList: [...appState.prizesList],
+                    backupColab: [...appState.backupColab],
+                    backupPrizes: [...appState.backupPrizes],
+                    winnersHistory: [...appState.winnersHistory],
+                    drawMode: appState.drawMode,
+                    currentTheme: appState.currentTheme,
+                    spinDurationSec: appState.spinDurationSec,
+                    autoRemove: document.getElementById('chkAutoRemove')?.checked ?? true,
+                    currentColab: appState.currentColab,
+                    currentPrize: appState.currentPrize,
+                    lastWinnerColab: appState.lastWinnerColab,
+                    lastWinnerPrize: appState.lastWinnerPrize
+                };
+
+                const payload = {
+                    activeSessionId: appState.activeSessionId,
+                    sessions: appState.sessions
+                };
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+                renderSessionSelector();
+                updateStorageBadge(createdAt);
+            } catch (e) {}
+        }
+
+        function updateStorageBadge(createdAt) {
+            const badgeText = document.getElementById('storageStatusText');
+            if (!badgeText || !createdAt) return;
+            const daysLeft = Math.max(0, Math.ceil((createdAt + SEVEN_DAYS_MS - Date.now()) / (24 * 60 * 60 * 1000)));
+            badgeText.textContent = `Guardado (${daysLeft}d)`;
+        }
+
+        function loadStateFromStorage() {
+            try {
+                const raw = localStorage.getItem(STORAGE_KEY);
+                if (!raw) {
+                    saveStateToStorage();
+                    return;
+                }
+                const parsed = JSON.parse(raw);
+                const now = Date.now();
+                const validSessions = {};
+                if (parsed && parsed.sessions) {
+                    Object.keys(parsed.sessions).forEach(id => {
+                        const s = parsed.sessions[id];
+                        if (s && (!s.expiresAt || s.expiresAt > now)) {
+                            validSessions[id] = s;
+                        }
+                    });
+                }
+                appState.sessions = validSessions;
+                const keys = Object.keys(validSessions);
+                if (keys.length === 0) {
+                    appState.activeSessionId = generateSessionId();
+                    saveStateToStorage();
+                    return;
+                }
+                const targetId = (parsed.activeSessionId && validSessions[parsed.activeSessionId])
+                    ? parsed.activeSessionId
+                    : keys[0];
+                applySessionData(targetId);
+            } catch (e) {
+                saveStateToStorage();
+            }
+        }
+
+        function applySessionData(sessionId) {
+            const session = appState.sessions[sessionId];
+            if (!session) return;
+
+            appState.activeSessionId = sessionId;
+            appState.colabList = Array.isArray(session.colabList) ? [...session.colabList] : [...SAMPLE_COLAB];
+            appState.prizesList = Array.isArray(session.prizesList) ? [...session.prizesList] : [...SAMPLE_PRIZES];
+            appState.backupColab = Array.isArray(session.backupColab) ? [...session.backupColab] : [...appState.colabList];
+            appState.backupPrizes = Array.isArray(session.backupPrizes) ? [...session.backupPrizes] : [...appState.prizesList];
+            appState.winnersHistory = Array.isArray(session.winnersHistory) ? [...session.winnersHistory] : [];
+            appState.drawMode = session.drawMode || 'both';
+            appState.currentTheme = session.currentTheme || 'modern_ui';
+            appState.spinDurationSec = session.spinDurationSec || 4.0;
+            appState.currentColab = session.currentColab || null;
+            appState.currentPrize = session.currentPrize || null;
+            appState.lastWinnerColab = session.lastWinnerColab || null;
+            appState.lastWinnerPrize = session.lastWinnerPrize || null;
+            appState.scrollOffsetColab = 0;
+            appState.scrollOffsetPrizes = 0;
+            appState.isRespinReplacement = false;
+
+            const titleInput = document.getElementById('eventTitleInput');
+            if (titleInput) titleInput.value = session.title || 'Torneo de Golf';
+
+            const slider = document.getElementById('spinDurationSlider');
+            if (slider) slider.value = appState.spinDurationSec;
+            const durLbl = document.getElementById('spinDurationLabel');
+            if (durLbl) durLbl.textContent = `${appState.spinDurationSec.toFixed(1)}s`;
+
+            const chkRemove = document.getElementById('chkAutoRemove');
+            if (chkRemove) chkRemove.checked = session.autoRemove !== undefined ? Boolean(session.autoRemove) : true;
+
+            const themeSel = document.getElementById('themeSelector');
+            if (themeSel) themeSel.value = appState.currentTheme;
+
+            const activeColabEl = document.getElementById('activeColabDisplay');
+            const activePrizeEl = document.getElementById('activePrizeDisplay');
+            const fixedText = document.getElementById('fixedSelectionText');
+            const fixedRoundTag = document.getElementById('fixedSelectionRoundTag');
+
+            if (appState.winnersHistory.length > 0) {
+                const last = appState.winnersHistory[appState.winnersHistory.length - 1];
+                if (activeColabEl) activeColabEl.textContent = last.colab;
+                if (activePrizeEl) activePrizeEl.textContent = last.prize;
+                if (fixedText) fixedText.textContent = `${last.colab}  →  ${last.prize}`;
+                if (fixedRoundTag) fixedRoundTag.textContent = `Ronda #${last.round}`;
+            } else {
+                if (activeColabEl) activeColabEl.textContent = '— Esperando giro —';
+                if (activePrizeEl) activePrizeEl.textContent = '— Esperando giro —';
+                if (fixedText) fixedText.textContent = 'Listo para iniciar el sorteo';
+                if (fixedRoundTag) fixedRoundTag.textContent = 'En espera';
+            }
+
+            syncTextareasFromState();
+            updateCountersAndHistoryUI();
+            updateDrawModeUI(appState.drawMode);
+            applyTheme(appState.currentTheme);
+            renderSessionSelector();
+            updateStorageBadge(session.createdAt || Date.now());
+        }
+
+        function renderSessionSelector() {
+            const sel = document.getElementById('sessionSelector');
+            if (!sel) return;
+            const ids = Object.keys(appState.sessions);
+            sel.innerHTML = ids.map(id => {
+                const s = appState.sessions[id];
+                const count = (s.winnersHistory || []).length;
+                const label = `${s.title || 'Sorteo'} (${count} rondas)`;
+                return `<option value="${id}" class="bg-[#1b1f2a] text-white" ${id === appState.activeSessionId ? 'selected' : ''}>${escapeHtml(label)}</option>`;
+            }).join('');
+        }
+
+        function switchSession(sessionId) {
+            if (appState.isSpinning || !appState.sessions[sessionId]) return;
+            applySessionData(sessionId);
+            saveStateToStorage();
+            showToast('Sesión de sorteo cargada', 'info');
+        }
+
+        function createNewSession() {
+            if (appState.isSpinning) return;
+            const count = Object.keys(appState.sessions).length + 1;
+            const newId = generateSessionId();
+            const now = Date.now();
+            appState.sessions[newId] = {
+                id: newId,
+                title: `Sorteo #${count} - Nuevo Horario`,
+                createdAt: now,
+                updatedAt: now,
+                expiresAt: now + SEVEN_DAYS_MS,
+                colabList: [...SAMPLE_COLAB],
+                prizesList: [...SAMPLE_PRIZES],
+                backupColab: [...SAMPLE_COLAB],
+                backupPrizes: [...SAMPLE_PRIZES],
+                winnersHistory: [],
+                drawMode: 'both',
+                currentTheme: appState.currentTheme,
+                spinDurationSec: appState.spinDurationSec,
+                autoRemove: true,
+                currentColab: null,
+                currentPrize: null,
+                lastWinnerColab: null,
+                lastWinnerPrize: null
+            };
+            applySessionData(newId);
+            saveStateToStorage();
+            showToast('Nuevo sorteo preparado y guardado por 7 días', 'success');
+        }
+
+        function duplicateCurrentSession() {
+            if (appState.isSpinning) return;
+            const currentTitle = document.getElementById('eventTitleInput')?.value.trim() || 'Sorteo';
+            const newId = generateSessionId();
+            const now = Date.now();
+            appState.sessions[newId] = {
+                id: newId,
+                title: `${currentTitle} (Copia)`,
+                createdAt: now,
+                updatedAt: now,
+                expiresAt: now + SEVEN_DAYS_MS,
+                colabList: [...appState.backupColab],
+                prizesList: [...appState.backupPrizes],
+                backupColab: [...appState.backupColab],
+                backupPrizes: [...appState.backupPrizes],
+                winnersHistory: [],
+                drawMode: appState.drawMode,
+                currentTheme: appState.currentTheme,
+                spinDurationSec: appState.spinDurationSec,
+                autoRemove: document.getElementById('chkAutoRemove')?.checked ?? true,
+                currentColab: null,
+                currentPrize: null,
+                lastWinnerColab: null,
+                lastWinnerPrize: null
+            };
+            applySessionData(newId);
+            saveStateToStorage();
+            showToast('Sorteo duplicado con listas completas', 'success');
+        }
+
+        function deleteCurrentSession() {
+            if (appState.isSpinning) return;
+            const ids = Object.keys(appState.sessions);
+            if (ids.length <= 1) {
+                resetEntireHistory();
+                restoreInitialLists();
+                saveStateToStorage();
+                showToast('Sesión única reiniciada', 'info');
+                return;
+            }
+            delete appState.sessions[appState.activeSessionId];
+            const nextId = Object.keys(appState.sessions)[0];
+            applySessionData(nextId);
+            saveStateToStorage();
+            showToast('Sesión eliminada', 'info');
+        }
+
+        function onEventTitleChange() {
+            saveStateToStorage();
+        }
+
+        function applyTheme(themeKey) {
+            const theme = THEMES[themeKey] || THEMES.modern_ui;
+            appState.currentTheme = themeKey;
+
+            document.documentElement.style.setProperty('--bg-base', theme.bgBase);
+            document.documentElement.style.setProperty('--glow-1', theme.glow1);
+            document.documentElement.style.setProperty('--glow-2', theme.glow2);
+            document.documentElement.style.setProperty('--dot-color', theme.dotColor);
+
+            const logoBox = document.getElementById('brandLogoBox');
+            const logoIcon = document.getElementById('brandLogoIcon');
+            const subtitle = document.getElementById('themeSubtitleText');
+
+            if (logoBox) {
+                logoBox.className = `w-11 h-11 rounded-2xl bg-gradient-to-br ${theme.logoGradient} flex items-center justify-center text-white shadow-lg ring-1 ring-white/20 shrink-0 transition-all duration-300`;
+            }
+            if (logoIcon) logoIcon.className = theme.logoIcon;
+            if (subtitle) subtitle.textContent = theme.subtitle;
+
+            renderWheels();
+            saveStateToStorage();
+        }
+
+        /**
+         * ============================================================================
+         * MOTOR DE AUDIO SINTETIZADO
+         * ============================================================================
+         */
+        let audioCtx = null;
+        function ensureAudioContext() {
+            if (!audioCtx) {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                if (AudioContextClass) audioCtx = new AudioContextClass();
+            }
+            if (audioCtx && audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+        }
+
+        function playTickSound(pitch = 620) {
+            if (!appState.soundEnabled) return;
+            try {
+                ensureAudioContext();
+                if (!audioCtx) return;
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'triangle';
+                osc.frequency.setValueAtTime(pitch, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(140, audioCtx.currentTime + 0.045);
+
+                gain.gain.setValueAtTime(0.11, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.045);
+
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.05);
+            } catch (e) {}
+        }
+
+        function playWinFanfare() {
+            if (!appState.soundEnabled) return;
+            try {
+                ensureAudioContext();
+                if (!audioCtx) return;
+                const notes = [523.25, 659.25, 783.99, 1046.50];
+                notes.forEach((freq, idx) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.type = 'sine';
+                    const start = audioCtx.currentTime + idx * 0.09;
+                    osc.frequency.setValueAtTime(freq, start);
+
+                    gain.gain.setValueAtTime(0.001, start);
+                    gain.gain.linearRampToValueAtTime(0.15, start + 0.03);
+                    gain.gain.exponentialRampToValueAtTime(0.001, start + 0.42);
+
+                    osc.connect(gain);
+                    gain.connect(audioCtx.destination);
+                    osc.start(start);
+                    osc.stop(start + 0.45);
+                });
+            } catch (e) {}
+        }
+
+        function toggleSound() {
+            appState.soundEnabled = !appState.soundEnabled;
+            const icon = document.getElementById('soundIcon');
+            if (icon) {
+                icon.className = appState.soundEnabled
+                    ? 'fa-solid fa-volume-high text-[#00AEEF]'
+                    : 'fa-solid fa-volume-xmark text-slate-500';
+            }
+            showToast(appState.soundEnabled ? 'Efectos de sonido activados' : 'Sonido silenciado', 'info');
+        }
+
+        /**
+         * ============================================================================
+         * RENDERIZADO DE TAMBORES VERTICALES (DESPLAZAMIENTO DE ABAJO HACIA ARRIBA)
+         * ============================================================================
+         */
+        function drawVerticalDrumCanvas(canvasId, items, offset, palette, centerEmoji, accentColor) {
+            const canvas = document.getElementById(canvasId);
+            if (!canvas || canvas.offsetParent === null) return;
+            const rect = canvas.getBoundingClientRect();
+            const w = Math.max(240, Math.floor(rect.width || 350));
+            const h = Math.max(240, Math.floor(rect.height || 350));
+            const dpr = window.devicePixelRatio || 1;
+
+            if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+                canvas.width = w * dpr;
+                canvas.height = h * dpr;
+            }
+
+            const ctx = canvas.getContext('2d');
+            ctx.save();
+            ctx.scale(dpr, dpr);
+            ctx.clearRect(0, 0, w, h);
+
+            const pad = 10;
+            const boxW = w - pad * 2;
+            const boxH = h - pad * 2;
+            const centerY = h / 2;
+
+            ctx.beginPath();
+            ctx.roundRect(pad, pad, boxW, boxH, 18);
+            ctx.fillStyle = '#131720';
+            ctx.fill();
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+            ctx.stroke();
+
+            const list = items.length > 0 ? items : ['Sin elementos disponibles'];
+            const count = list.length;
+            const cycle = count * ROW_HEIGHT;
+            const norm = ((offset % cycle) + cycle) % cycle;
+            const rows = Math.ceil(boxH / ROW_HEIGHT) + 4;
+            const startRow = Math.floor((norm - boxH / 2) / ROW_HEIGHT) - 2;
+
+            ctx.save();
+            ctx.beginPath();
+            ctx.roundRect(pad + 3, pad + 3, boxW - 6, boxH - 6, 15);
+            ctx.clip();
+
+            for (let i = 0; i < rows; i++) {
+                const rIdx = startRow + i;
+                const itemIdx = ((rIdx % count) + count) % count;
+                const y = centerY + (rIdx * ROW_HEIGHT - norm);
+
+                if (y + ROW_HEIGHT < pad || y - ROW_HEIGHT > h - pad) continue;
+
+                const cardW = boxW - 24;
+                const cardH = ROW_HEIGHT - 10;
+                const cardX = w / 2 - cardW / 2;
+                const cardY = y - cardH / 2;
+                const centered = Math.abs(y - centerY) < ROW_HEIGHT * 0.45;
+
+                ctx.beginPath();
+                ctx.roundRect(cardX, cardY, cardW, cardH, 12);
+                ctx.fillStyle = items.length === 0 ? '#1e293b' : palette[itemIdx % palette.length];
+                ctx.fill();
+                ctx.lineWidth = centered ? 2.5 : 1;
+                ctx.strokeStyle = centered ? '#ffffff' : 'rgba(255, 255, 255, 0.2)';
+                ctx.stroke();
+
+                ctx.font = '15px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#ffffff';
+                ctx.fillText(centerEmoji || '🏆', cardX + 22, y);
+
+                ctx.textAlign = 'left';
+                ctx.font = centered ? '800 13.5px Inter, sans-serif' : '600 12.5px Inter, sans-serif';
+                let label = String(list[itemIdx]);
+                const maxChars = Math.max(18, Math.floor((cardW - 56) / 7.2));
+                if (label.length > maxChars) {
+                    label = label.slice(0, maxChars - 1) + '…';
+                }
+                ctx.fillText(label, cardX + 42, y);
+            }
+
+            ctx.beginPath();
+            ctx.roundRect(pad + 6, centerY - (ROW_HEIGHT - 6) / 2, boxW - 12, ROW_HEIGHT - 6, 13);
+            ctx.lineWidth = 2.5;
+            ctx.strokeStyle = accentColor;
+            ctx.stroke();
+            ctx.restore();
+
+            ctx.fillStyle = accentColor;
+            ctx.beginPath();
+            ctx.moveTo(pad, centerY - 7);
+            ctx.lineTo(pad + 10, centerY);
+            ctx.lineTo(pad, centerY + 7);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.beginPath();
+            ctx.moveTo(w - pad, centerY - 7);
+            ctx.lineTo(w - pad - 10, centerY);
+            ctx.lineTo(w - pad, centerY + 7);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function renderWheels() {
+            const theme = THEMES[appState.currentTheme] || THEMES.modern_ui;
+            drawVerticalDrumCanvas('canvasColab', appState.colabList, appState.scrollOffsetColab, theme.colabPalette, theme.colabIcon, theme.colabAccent || '#00AEEF');
+            drawVerticalDrumCanvas('canvasPrizes', appState.prizesList, appState.scrollOffsetPrizes, theme.prizesPalette, theme.prizeIcon, theme.pointerColor || '#FF7A00');
+        }
+
+        function getCenteredIndex(offset, count) {
+            if (count <= 0) return -1;
+            const cycle = count * ROW_HEIGHT;
+            const norm = ((offset % cycle) + cycle) % cycle;
+            const row = Math.round(norm / ROW_HEIGHT);
+            return ((row % count) + count) % count;
+        }
+
+        /**
+         * ============================================================================
+         * ALEATORIEDAD REAL Y ANIMACIÓN VERTICAL
+         * ============================================================================
+         */
+        function cryptoRandom() {
+            if (window.crypto && window.crypto.getRandomValues) {
+                const arr = new Uint32Array(1);
+                window.crypto.getRandomValues(arr);
+                return arr[0] / (0xffffffff + 1);
+            }
+            return Math.random();
+        }
+
+        function fisherYatesShuffle(array, avoidFirst = null) {
+            const arr = [...array];
+            if (arr.length <= 1) return arr;
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = Math.floor(cryptoRandom() * (i + 1));
+                [arr[i], arr[j]] = [arr[j], arr[i]];
+            }
+            if (avoidFirst && arr[0] === avoidFirst) {
+                arr.push(arr.shift());
+            }
+            return arr;
+        }
+
+        function pickTargetOffset(items, currentOffset, cycles, avoidValue) {
+            const count = items.length;
+            if (count <= 0) return currentOffset;
+            const cycle = count * ROW_HEIGHT;
+            let targetIdx = Math.floor(cryptoRandom() * count);
+            if (count > 1 && avoidValue && items[targetIdx] === avoidValue) {
+                targetIdx = (targetIdx + 1) % count;
+            }
+            const targetMod = targetIdx * ROW_HEIGHT;
+            const currentMod = ((currentOffset % cycle) + cycle) % cycle;
+            let delta = (targetMod - currentMod + cycle) % cycle;
+            if (delta === 0) delta = cycle;
+            return currentOffset + cycles * cycle + delta;
+        }
+
+        function updateSpinDuration(val) {
+            appState.spinDurationSec = parseFloat(val) || 4.0;
+            const lbl = document.getElementById('spinDurationLabel');
+            if (lbl) lbl.textContent = `${appState.spinDurationSec.toFixed(1)}s`;
+            saveStateToStorage();
+        }
+
+        function setSpinPreset(seconds) {
+            const slider = document.getElementById('spinDurationSlider');
+            if (slider) slider.value = seconds;
+            updateSpinDuration(seconds);
+        }
+
+        function checkFinishedState() {
+            const mode = appState.drawMode || 'both';
+            if (mode === 'colab') {
+                appState.isFinished = appState.colabList.length === 0;
+            } else {
+                appState.isFinished = appState.prizesList.length === 0;
+            }
+            const banner = document.getElementById('finishedBanner');
+            const bannerTitle = document.getElementById('finishedBannerTitle');
+            if (banner) {
+                banner.classList.toggle('hidden', !appState.isFinished);
+            }
+            if (bannerTitle && appState.isFinished) {
+                bannerTitle.textContent = mode === 'colab'
+                    ? '¡Sorteo Finalizado! Se han seleccionado todos los participantes'
+                    : '¡Sorteo Finalizado! Se han entregado todos los premios';
+            }
+        }
+
+        function setButtonsLock(locked) {
+            const btnBoth = document.getElementById('btnSpinBoth');
+            const btnColab = document.getElementById('btnSpinColabOnly');
+            const btnPrizes = document.getElementById('btnSpinPrizesOnly');
+
+            if (btnBoth) btnBoth.disabled = locked || appState.isFinished;
+            if (btnColab) btnColab.disabled = locked || appState.isFinished;
+            if (btnPrizes) btnPrizes.disabled = locked || appState.isFinished;
+        }
+
+        function getSelectedDrawMode() {
+            const sel = document.getElementById('drawModeSelector');
+            return sel ? sel.value : (appState.drawMode || 'both');
+        }
+
+        function updateDrawModeUI(mode) {
+            appState.drawMode = mode || 'both';
+            const sel = document.getElementById('drawModeSelector');
+            if (sel && sel.value !== appState.drawMode) {
+                sel.value = appState.drawMode;
+            }
+
+            const labelEl = document.getElementById('btnMainSpinLabel');
+            const drumsGrid = document.getElementById('drumsGrid');
+            const stageColab = document.getElementById('drumStageColab');
+            const stagePrizes = document.getElementById('drumStagePrizes');
+
+            const sbColab = document.getElementById('scoreboardColabCard');
+            const sbCenter = document.getElementById('scoreboardCenterEmblem');
+            const sbPrize = document.getElementById('scoreboardPrizeCard');
+
+            if (appState.drawMode === 'colab') {
+                if (labelEl) labelEl.textContent = 'SORTEAR SOLO PERSONAS';
+                if (stageColab) {
+                    stageColab.classList.remove('hidden');
+                    stageColab.classList.add('max-w-lg', 'mx-auto');
+                }
+                if (stagePrizes) stagePrizes.classList.add('hidden');
+                if (drumsGrid) {
+                    drumsGrid.classList.remove('md:grid-cols-2');
+                    drumsGrid.classList.add('grid-cols-1');
+                }
+                if (sbColab) {
+                    sbColab.classList.remove('hidden', 'md:col-span-5');
+                    sbColab.classList.add('md:col-span-11');
+                }
+                if (sbCenter) sbCenter.classList.add('hidden');
+                if (sbPrize) sbPrize.classList.add('hidden');
+            } else if (appState.drawMode === 'prizes') {
+                if (labelEl) labelEl.textContent = 'SORTEAR SOLO PREMIOS';
+                if (stagePrizes) {
+                    stagePrizes.classList.remove('hidden');
+                    stagePrizes.classList.add('max-w-lg', 'mx-auto');
+                }
+                if (stageColab) stageColab.classList.add('hidden');
+                if (drumsGrid) {
+                    drumsGrid.classList.remove('md:grid-cols-2');
+                    drumsGrid.classList.add('grid-cols-1');
+                }
+                if (sbPrize) {
+                    sbPrize.classList.remove('hidden', 'md:col-span-5');
+                    sbPrize.classList.add('md:col-span-11');
+                }
+                if (sbCenter) sbCenter.classList.add('hidden');
+                if (sbColab) sbColab.classList.add('hidden');
+            } else {
+                if (labelEl) labelEl.textContent = 'GIRAR AMBOS TAMBORES';
+                if (stageColab) {
+                    stageColab.classList.remove('hidden', 'max-w-lg', 'mx-auto');
+                }
+                if (stagePrizes) {
+                    stagePrizes.classList.remove('hidden', 'max-w-lg', 'mx-auto');
+                }
+                if (drumsGrid) {
+                    drumsGrid.classList.remove('grid-cols-1');
+                    drumsGrid.classList.add('md:grid-cols-2');
+                }
+                if (sbColab) {
+                    sbColab.classList.remove('hidden', 'md:col-span-11');
+                    sbColab.classList.add('md:col-span-5');
+                }
+                if (sbCenter) sbCenter.classList.remove('hidden');
+                if (sbPrize) {
+                    sbPrize.classList.remove('hidden', 'md:col-span-11');
+                    sbPrize.classList.add('md:col-span-5');
+                }
+            }
+
+            checkFinishedState();
+            setButtonsLock(appState.isSpinning);
+            saveStateToStorage();
+            setTimeout(renderWheels, 20);
+        }
+
+        function spinWheels(mode = 'both') {
+            if (appState.isSpinning) return;
+
+            checkFinishedState();
+            if (appState.isFinished) {
+                setButtonsLock(false);
+                showToast('El sorteo ha finalizado porque ya no quedan elementos en este modo', 'info');
+                return;
+            }
+
+            const validationMsg = document.getElementById('mainValidationMsg');
+            if (validationMsg) validationMsg.textContent = '';
+
+            if ((mode === 'both' || mode === 'colab') && appState.colabList.length === 0) {
+                if (validationMsg) validationMsg.textContent = 'Agrega al menos 1 participante para sortear.';
+                showToast('No hay participantes disponibles en la lista', 'error');
+                return;
+            }
+            if ((mode === 'both' || mode === 'prizes') && appState.prizesList.length === 0) {
+                if (validationMsg) validationMsg.textContent = 'No quedan premios disponibles para sortear.';
+                showToast('No quedan premios disponibles', 'error');
+                return;
+            }
+
+            if (mode === 'both' || mode === 'colab') {
+                appState.colabList = fisherYatesShuffle(appState.colabList, appState.lastWinnerColab);
+            }
+            if (mode === 'both' || mode === 'prizes') {
+                appState.prizesList = fisherYatesShuffle(appState.prizesList, appState.lastWinnerPrize);
+            }
+            syncTextareasFromState();
+            renderWheels();
+
+            appState.isSpinning = true;
+            setButtonsLock(true);
+
+            const reSpinBadge = document.getElementById('reSpinBadge');
+            if (reSpinBadge) {
+                reSpinBadge.classList.toggle('hidden', mode === 'both');
+            }
+
+            const baseDurationMs = appState.spinDurationSec * 1000;
+            const durationColab = baseDurationMs;
+            const durationPrizes = mode === 'both' ? baseDurationMs + 600 : baseDurationMs;
+
+            const cyclesBase = Math.max(3, Math.round(appState.spinDurationSec * 1.1));
+            const startOffsetColab = appState.scrollOffsetColab;
+            const startOffsetPrizes = appState.scrollOffsetPrizes;
+
+            const endOffsetColab = (mode === 'both' || mode === 'colab')
+                ? pickTargetOffset(appState.colabList, startOffsetColab, cyclesBase, appState.lastWinnerColab)
+                : startOffsetColab;
+
+            const endOffsetPrizes = (mode === 'both' || mode === 'prizes')
+                ? pickTargetOffset(appState.prizesList, startOffsetPrizes, cyclesBase + 1, appState.lastWinnerPrize)
+                : startOffsetPrizes;
+
+            let lastTickColab = -1;
+            let lastTickPrizes = -1;
+            const startTime = performance.now();
+
+            function easeOutCubic(t) {
+                return 1 - Math.pow(1 - t, 3);
+            }
+
+            function animateFrame(now) {
+                const elapsed = now - startTime;
+                let doneColab = true;
+                let donePrizes = true;
+
+                if (endOffsetColab !== startOffsetColab) {
+                    const tC = Math.min(1, elapsed / durationColab);
+                    appState.scrollOffsetColab = startOffsetColab + (endOffsetColab - startOffsetColab) * easeOutCubic(tC);
+                    const idxC = getCenteredIndex(appState.scrollOffsetColab, appState.colabList.length);
+                    if (idxC !== lastTickColab && idxC >= 0) {
+                        lastTickColab = idxC;
+                        playTickSound(640);
+                        const tickerC = document.getElementById('liveTickerColab');
+                        if (tickerC) tickerC.textContent = appState.colabList[idxC];
+                    }
+                    if (tC < 1) doneColab = false;
+                }
+
+                if (endOffsetPrizes !== startOffsetPrizes) {
+                    const tP = Math.min(1, elapsed / durationPrizes);
+                    appState.scrollOffsetPrizes = startOffsetPrizes + (endOffsetPrizes - startOffsetPrizes) * easeOutCubic(tP);
+                    const idxP = getCenteredIndex(appState.scrollOffsetPrizes, appState.prizesList.length);
+                    if (idxP !== lastTickPrizes && idxP >= 0) {
+                        lastTickPrizes = idxP;
+                        if (endOffsetColab === startOffsetColab) playTickSound(520);
+                        const tickerP = document.getElementById('liveTickerPrizes');
+                        if (tickerP) tickerP.textContent = appState.prizesList[idxP];
+                    }
+                    if (tP < 1) donePrizes = false;
+                }
+
+                renderWheels();
+
+                if (!doneColab || !donePrizes) {
+                    requestAnimationFrame(animateFrame);
+                } else {
+                    finalizeSpin(mode);
+                }
+            }
+
+            requestAnimationFrame(animateFrame);
+        }
+
+        function finalizeSpin(mode) {
+            appState.isSpinning = false;
+
+            if (mode === 'both' || mode === 'colab') {
+                const idxC = getCenteredIndex(appState.scrollOffsetColab, appState.colabList.length);
+                appState.currentColabIdx = idxC;
+                appState.currentColab = appState.colabList[idxC] || '—';
+                appState.lastWinnerColab = appState.currentColab;
+            } else if (!appState.currentColab) {
+                appState.currentColab = '— Solo sorteo de premio —';
+            }
+
+            if (mode === 'both' || mode === 'prizes') {
+                const idxP = getCenteredIndex(appState.scrollOffsetPrizes, appState.prizesList.length);
+                appState.currentPrizeIdx = idxP;
+                appState.currentPrize = appState.prizesList[idxP] || '—';
+                appState.lastWinnerPrize = appState.currentPrize;
+            } else if (!appState.currentPrize) {
+                appState.currentPrize = '— Solo sorteo de persona —';
+            }
+
+            const activeColabEl = document.getElementById('activeColabDisplay');
+            const activePrizeEl = document.getElementById('activePrizeDisplay');
+            const tickerC = document.getElementById('liveTickerColab');
+            const tickerP = document.getElementById('liveTickerPrizes');
+            const fixedText = document.getElementById('fixedSelectionText');
+            const fixedRoundTag = document.getElementById('fixedSelectionRoundTag');
+
+            if (activeColabEl) activeColabEl.textContent = mode === 'prizes' ? '— Solo Premio —' : appState.currentColab;
+            if (activePrizeEl) activePrizeEl.textContent = mode === 'colab' ? '— Solo Persona —' : appState.currentPrize;
+
+            if (tickerC && (mode === 'both' || mode === 'colab')) tickerC.textContent = `🎯 ${appState.currentColab}`;
+            if (tickerP && (mode === 'both' || mode === 'prizes')) tickerP.textContent = `🏆 ${appState.currentPrize}`;
+
+            const timeStr = new Date().toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const roundColab = mode === 'prizes' ? '— (Solo Premio) —' : appState.currentColab;
+            const roundPrize = mode === 'colab' ? '— (Solo Persona) —' : appState.currentPrize;
+
+            if (appState.isRespinReplacement && appState.winnersHistory.length > 0) {
+                const lastEntry = appState.winnersHistory[appState.winnersHistory.length - 1];
+                if (mode === 'colab') {
+                    lastEntry.colab = roundColab;
+                } else if (mode === 'prizes') {
+                    lastEntry.prize = roundPrize;
+                } else {
+                    lastEntry.colab = roundColab;
+                    lastEntry.prize = roundPrize;
+                }
+                lastEntry.time = timeStr;
+                appState.isRespinReplacement = false;
+            } else {
+                appState.winnersHistory.push({
+                    round: appState.winnersHistory.length + 1,
+                    colab: roundColab,
+                    prize: roundPrize,
+                    time: timeStr
+                });
+            }
+
+            const currentRoundNum = appState.winnersHistory.length;
+            const activeEntry = appState.winnersHistory[currentRoundNum - 1];
+            if (fixedText && activeEntry) {
+                if (appState.drawMode === 'colab') {
+                    fixedText.textContent = `Persona seleccionada: ${activeEntry.colab}`;
+                } else if (appState.drawMode === 'prizes') {
+                    fixedText.textContent = `Premio seleccionado: ${activeEntry.prize}`;
+                } else {
+                    fixedText.textContent = `${activeEntry.colab}  →  ${activeEntry.prize}`;
+                }
+            }
+            if (fixedRoundTag) {
+                fixedRoundTag.textContent = `Ronda #${currentRoundNum}`;
+            }
+
+            const autoRemove = document.getElementById('chkAutoRemove')?.checked ?? true;
+            if (autoRemove) {
+                if ((mode === 'both' || mode === 'colab') && appState.currentColabIdx >= 0) {
+                    appState.colabList.splice(appState.currentColabIdx, 1);
+                    appState.currentColabIdx = -1;
+                    appState.scrollOffsetColab = 0;
+                }
+                if ((mode === 'both' || mode === 'prizes') && appState.currentPrizeIdx >= 0) {
+                    appState.prizesList.splice(appState.currentPrizeIdx, 1);
+                    appState.currentPrizeIdx = -1;
+                    appState.scrollOffsetPrizes = 0;
+                }
+                syncTextareasFromState();
+                renderWheels();
+            }
+
+            updateCountersAndHistoryUI();
+            playWinFanfare();
+            triggerCelebrationConfetti();
+            openRoundModal(mode);
+
+            checkFinishedState();
+            setButtonsLock(false);
+            saveStateToStorage();
+        }
+
+        function triggerCelebrationConfetti() {
+            if (typeof confetti !== 'function') return;
+            const theme = THEMES[appState.currentTheme] || THEMES.modern_ui;
+            confetti({
+                particleCount: 85,
+                spread: 75,
+                origin: { y: 0.6 },
+                colors: theme.confettiColors
+            });
+        }
+
+        /**
+         * ============================================================================
+         * MODALES DE RONDA Y RE-GIROS POR AUSENCIA
+         * ============================================================================
+         */
+        function openRoundModal(mode) {
+            const modal = document.getElementById('roundWinnerModal');
+            const roundNumEl = document.getElementById('modalRoundNumber');
+            const colabEl = document.getElementById('modalWinnerColab');
+            const prizeEl = document.getElementById('modalWinnerPrize');
+
+            const colabCard = document.getElementById('modalColabCard');
+            const centerDiv = document.getElementById('modalCenterDivider');
+            const prizeCard = document.getElementById('modalPrizeCard');
+
+            const currentRound = appState.winnersHistory.length;
+            if (roundNumEl) roundNumEl.textContent = currentRound;
+            if (colabEl) colabEl.textContent = mode === 'prizes' ? '— (Solo Premio) —' : (appState.currentColab || '—');
+            if (prizeEl) prizeEl.textContent = mode === 'colab' ? '— (Solo Persona) —' : (appState.currentPrize || '—');
+
+            if (colabCard && centerDiv && prizeCard) {
+                colabCard.classList.toggle('hidden', mode === 'prizes');
+                prizeCard.classList.toggle('hidden', mode === 'colab');
+                centerDiv.classList.toggle('hidden', mode !== 'both');
+            }
+
+            const btnRespinColab = document.getElementById('btnModalRespinColab');
+            const btnRespinPrize = document.getElementById('btnModalRespinPrize');
+            if (btnRespinColab) btnRespinColab.disabled = appState.colabList.length === 0;
+            if (btnRespinPrize) btnRespinPrize.disabled = appState.prizesList.length === 0;
+
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            }
+        }
+
+        function closeRoundModal() {
+            const modal = document.getElementById('roundWinnerModal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+            if (appState.isFinished) {
+                openFinalSummaryModal(true);
+            }
+        }
+
+        function handleAbsenceRespin(target) {
+            const modal = document.getElementById('roundWinnerModal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+            if (target === 'colab' && appState.colabList.length > 0) {
+                appState.isFinished = false;
+                appState.isRespinReplacement = true;
+                spinWheels('colab');
+            } else if (target === 'prizes' && appState.prizesList.length > 0) {
+                appState.isFinished = false;
+                appState.isRespinReplacement = true;
+                spinWheels('prizes');
+            } else {
+                showToast('No hay más elementos disponibles para re-girar', 'error');
+            }
+        }
+
+        /**
+         * ============================================================================
+         * GESTIÓN DE LISTAS, IMPORTACIÓN EXCEL Y PLANTILLA
+         * ============================================================================
+         */
+        function syncFromTextareas() {
+            const txtC = document.getElementById('txtColab')?.value || '';
+            const txtP = document.getElementById('txtPrizes')?.value || '';
+
+            appState.colabList = txtC.split('\n').map(s => s.trim()).filter(Boolean);
+            appState.prizesList = txtP.split('\n').map(s => s.trim()).filter(Boolean);
+
+            checkFinishedState();
+            setButtonsLock(appState.isSpinning);
+            updateCountersAndHistoryUI();
+            renderWheels();
+            saveStateToStorage();
+        }
+
+        function syncTextareasFromState() {
+            const txtC = document.getElementById('txtColab');
+            const txtP = document.getElementById('txtPrizes');
+            if (txtC) txtC.value = appState.colabList.join('\n');
+            if (txtP) txtP.value = appState.prizesList.join('\n');
+        }
+
+        function shuffleList(type) {
+            if (type === 'colab') {
+                appState.colabList = fisherYatesShuffle(appState.colabList);
+            } else {
+                appState.prizesList = fisherYatesShuffle(appState.prizesList);
+            }
+            syncTextareasFromState();
+            renderWheels();
+            saveStateToStorage();
+            showToast('Lista mezclada aleatoriamente', 'success');
+        }
+
+        function restoreInitialLists() {
+            appState.colabList = [...appState.backupColab];
+            appState.prizesList = [...appState.backupPrizes];
+            appState.scrollOffsetColab = 0;
+            appState.scrollOffsetPrizes = 0;
+            checkFinishedState();
+            syncTextareasFromState();
+            setButtonsLock(false);
+            updateCountersAndHistoryUI();
+            renderWheels();
+            saveStateToStorage();
+            showToast('Listas restauradas', 'success');
+        }
+
+        function clearAllLists() {
+            appState.colabList = [];
+            appState.prizesList = [];
+            appState.scrollOffsetColab = 0;
+            appState.scrollOffsetPrizes = 0;
+            syncTextareasFromState();
+            updateCountersAndHistoryUI();
+            renderWheels();
+            saveStateToStorage();
+            showToast('Listas vaciadas', 'info');
+        }
+
+        function handleExcelImport(event, target) {
+            const file = event.target.files?.[0];
+            if (!file) return;
+
+            if (typeof XLSX === 'undefined') {
+                showToast('Librería Excel no disponible en este momento', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+
+                    const headerKeywords = ['nombre', 'golfista', 'colaborador', 'participante', 'premio', 'premios', 'jugador', 'lista'];
+                    const extracted = [];
+
+                    rows.forEach((row, idx) => {
+                        if (!Array.isArray(row) || row.length === 0) return;
+                        const cellVal = String(row[0] ?? '').trim();
+                        if (!cellVal) return;
+                        if (idx === 0 && headerKeywords.includes(cellVal.toLowerCase())) return;
+                        extracted.push(cellVal);
+                    });
+
+                    if (extracted.length === 0) {
+                        showToast('El archivo Excel no contiene registros válidos en la primera columna', 'error');
+                        return;
+                    }
+
+                    if (target === 'colab') {
+                        appState.colabList = extracted;
+                        appState.backupColab = [...extracted];
+                        appState.scrollOffsetColab = 0;
+                    } else {
+                        appState.prizesList = extracted;
+                        appState.backupPrizes = [...extracted];
+                        appState.scrollOffsetPrizes = 0;
+                    }
+
+                    checkFinishedState();
+                    syncTextareasFromState();
+                    setButtonsLock(false);
+                    updateCountersAndHistoryUI();
+                    renderWheels();
+                    saveStateToStorage();
+                    showToast(`Se importaron ${extracted.length} registros correctamente`, 'success');
+                } catch (err) {
+                    showToast('Error al leer el archivo Excel', 'error');
+                } finally {
+                    event.target.value = '';
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function downloadExcelTemplate() {
+            if (typeof XLSX === 'undefined') {
+                showToast('Librería Excel no cargada', 'error');
+                return;
+            }
+            const wb = XLSX.utils.book_new();
+            const wsColab = XLSX.utils.aoa_to_sheet([
+                ['Golfista / Participante'],
+                ['Carlos Mendoza (Hándicap 8)'],
+                ['Sofía Ramírez (Hándicap 12)'],
+                ['Fernando Ortega (Hándicap 15)']
+            ]);
+            const wsPrizes = XLSX.utils.aoa_to_sheet([
+                ['Premio'],
+                ['Driver Titleist GT3'],
+                ['Set de Pelotas Pro V1'],
+                ['Green Fee VIP']
+            ]);
+            XLSX.utils.book_append_sheet(wb, wsColab, 'Golfistas');
+            XLSX.utils.book_append_sheet(wb, wsPrizes, 'Premios');
+            XLSX.writeFile(wb, 'Plantilla_Sorteo_Golf.xlsx');
+            showToast('Plantilla Excel descargada', 'success');
+        }
+
+        /**
+         * ============================================================================
+         * HISTORIAL, ACTA FINAL Y EXPORTACIÓN EXCEL / PDF
+         * ============================================================================
+         */
+        function updateCountersAndHistoryUI() {
+            const cLen = appState.colabList.length;
+            const pLen = appState.prizesList.length;
+            const hLen = appState.winnersHistory.length;
+
+            const setTxt = (id, val) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = val;
+            };
+
+            setTxt('countColabBadge', cLen);
+            setTxt('countPrizesBadge', pLen);
+            setTxt('lblCountColab', cLen);
+            setTxt('lblCountPrizes', pLen);
+            setTxt('drawerHistoryCount', hLen);
+            setTxt('summaryBadge', hLen);
+            setTxt('currentRoundLabel', hLen + 1);
+
+            const historyContainer = document.getElementById('historyContainer');
+            const btnClearHistory = document.getElementById('btnClearHistory');
+
+            if (historyContainer) {
+                if (hLen === 0) {
+                    historyContainer.innerHTML = `
+                        <div class="text-center py-8 px-4 border border-dashed border-white/10 rounded-2xl text-slate-400 text-xs">
+                            <i class="fa-solid fa-trophy text-2xl text-slate-600 mb-2 block"></i>
+                            Aún no hay resultados registrados en esta sesión. ¡Inicia el sorteo para comenzar!
+                        </div>
+                    `;
+                    if (btnClearHistory) btnClearHistory.classList.add('hidden');
+                } else {
+                    historyContainer.innerHTML = [...appState.winnersHistory].reverse().map(item => `
+                        <div class="bg-[#1b1f2a] border border-white/10 rounded-2xl p-3 flex items-center justify-between gap-3">
+                            <div class="min-w-0">
+                                <div class="flex items-center gap-2">
+                                    <span class="px-2 py-0.5 rounded-md bg-[#FF7A00]/20 text-[#ffaa5c] text-[10px] font-extrabold">Ronda #${item.round}</span>
+                                    <span class="text-[10px] text-slate-400">${item.time}</span>
+                                </div>
+                                <p class="font-bold text-sm text-white truncate mt-1">${escapeHtml(item.colab)}</p>
+                                <p class="text-xs text-[#bef264] font-semibold truncate"><i class="fa-solid fa-gift mr-1"></i>${escapeHtml(item.prize)}</p>
+                            </div>
+                        </div>
+                    `).join('');
+                    if (btnClearHistory) btnClearHistory.classList.remove('hidden');
+                }
+            }
+            renderSessionSelector();
+        }
+
+        function resetEntireHistory() {
+            appState.winnersHistory = [];
+            appState.currentColab = null;
+            appState.currentPrize = null;
+            appState.lastWinnerColab = null;
+            appState.lastWinnerPrize = null;
+
+            const activeColabEl = document.getElementById('activeColabDisplay');
+            const activePrizeEl = document.getElementById('activePrizeDisplay');
+            const fixedText = document.getElementById('fixedSelectionText');
+            const fixedRoundTag = document.getElementById('fixedSelectionRoundTag');
+
+            if (activeColabEl) activeColabEl.textContent = '— Esperando giro —';
+            if (activePrizeEl) activePrizeEl.textContent = '— Esperando giro —';
+            if (fixedText) fixedText.textContent = 'Listo para iniciar el sorteo';
+            if (fixedRoundTag) fixedRoundTag.textContent = 'En espera';
+
+            updateCountersAndHistoryUI();
+            saveStateToStorage();
+            showToast('Historial de ganadores reiniciado', 'info');
+        }
+
+        function openFinalSummaryModal(isCompleted = false) {
+            const modal = document.getElementById('finalSummaryModal');
+            const eventTitle = document.getElementById('eventTitleInput')?.value.trim() || 'Torneo de Golf';
+            const dateStr = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+
+            const titleEl = document.getElementById('finalModalTitle');
+            const dateEl = document.getElementById('finalModalDate');
+            const badgeEl = document.getElementById('finalStatusBadge');
+
+            if (titleEl) titleEl.textContent = eventTitle;
+            if (dateEl) dateEl.textContent = `Fecha de emisión: ${dateStr}`;
+            if (badgeEl) {
+                badgeEl.textContent = isCompleted ? 'Sorteo Finalizado • Acta Oficial' : 'Corte Parcial de Resultados';
+            }
+
+            document.getElementById('metricTotalWon').textContent = appState.winnersHistory.length;
+            document.getElementById('metricPrizesLeft').textContent = appState.prizesList.length;
+            document.getElementById('metricColabLeft').textContent = appState.colabList.length;
+
+            const tbody = document.getElementById('finalWinnersTableBody');
+            if (tbody) {
+                if (appState.winnersHistory.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="4" class="py-8 text-center text-slate-400 text-xs">No se han registrado resultados todavía.</td>
+                        </tr>
+                    `;
+                } else {
+                    tbody.innerHTML = appState.winnersHistory.map(w => `
+                        <tr class="hover:bg-slate-800/40 transition">
+                            <td class="py-3 px-4 font-bold text-amber-400">#${w.round}</td>
+                            <td class="py-3 px-4 font-semibold text-white">${escapeHtml(w.colab)}</td>
+                            <td class="py-3 px-4 font-semibold text-emerald-400">${escapeHtml(w.prize)}</td>
+                            <td class="py-3 px-4 text-right text-xs text-slate-400">${w.time}</td>
+                        </tr>
+                    `).join('');
+                }
+            }
+
+            if (modal) {
+                modal.classList.remove('hidden');
+                modal.classList.add('flex');
+            }
+        }
+
+        function closeFinalSummaryModal() {
+            const modal = document.getElementById('finalSummaryModal');
+            if (modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        }
+
+        function exportWinnersToExcel() {
+            if (appState.winnersHistory.length === 0) {
+                showToast('No hay resultados para exportar a Excel', 'error');
+                return;
+            }
+            if (typeof XLSX === 'undefined') {
+                showToast('Librería Excel no disponible', 'error');
+                return;
+            }
+            const eventTitle = document.getElementById('eventTitleInput')?.value.trim() || 'Sorteo_Golf';
+            const rows = [
+                ['Ronda', 'Golfista / Participante', 'Premio Obtenido', 'Hora'],
+                ...appState.winnersHistory.map(w => [w.round, w.colab, w.prize, w.time])
+            ];
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            XLSX.utils.book_append_sheet(wb, ws, 'Resultados_Rifa');
+            XLSX.writeFile(wb, `${eventTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Resultados.xlsx`);
+            showToast('Resultados exportados a Excel (.xlsx)', 'success');
+        }
+
+        function exportWinnersToPDF() {
+            if (appState.winnersHistory.length === 0) {
+                showToast('No hay ganadores para generar el PDF', 'error');
+                return;
+            }
+            if (!window.jspdf || !window.jspdf.jsPDF) {
+                showToast('Librería PDF no disponible', 'error');
+                return;
+            }
+
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            const eventTitle = document.getElementById('eventTitleInput')?.value.trim() || 'Torneo de Golf';
+            const dateStr = new Date().toLocaleDateString('es-MX', { year: 'numeric', month: 'long', day: 'numeric' });
+
+            doc.setFillColor(27, 31, 42);
+            doc.rect(0, 0, 210, 38, 'F');
+
+            doc.setTextColor(255, 122, 0);
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'bold');
+            doc.text('ACTA OFICIAL DE PREMIACIÓN Y RESULTADOS', 14, 14);
+
+            doc.setTextColor(255, 255, 255);
+            doc.setFontSize(16);
+            doc.text(eventTitle, 14, 24);
+
+            doc.setTextColor(203, 213, 225);
+            doc.setFontSize(9);
+            doc.setFont('helvetica', 'normal');
+            doc.text(`Fecha: ${dateStr}   |   Total de rondas: ${appState.winnersHistory.length}`, 14, 32);
+
+            doc.autoTable({
+                startY: 45,
+                head: [['Ronda', 'Golfista / Participante Ganador', 'Premio Obtenido', 'Hora']],
+                body: appState.winnersHistory.map(w => [`#${w.round}`, w.colab, w.prize, w.time]),
+                theme: 'grid',
+                headStyles: { fillColor: [255, 122, 0], textColor: 255, fontStyle: 'bold' },
+                alternateRowStyles: { fillColor: [248, 250, 252] },
+                styles: { fontSize: 10, cellPadding: 4 }
+            });
+
+            const finalY = (doc.lastAutoTable?.finalY || 120) + 28;
+            if (finalY < 265) {
+                doc.setDrawColor(100, 116, 139);
+                doc.line(25, finalY, 90, finalY);
+                doc.line(120, finalY, 185, finalY);
+                doc.setFontSize(9);
+                doc.setTextColor(71, 85, 105);
+                doc.text('Comité Organizador del Torneo', 57.5, finalY + 5, { align: 'center' });
+                doc.text('Testigo / Interventor de Premiación', 152.5, finalY + 5, { align: 'center' });
+            }
+
+            doc.save(`${eventTitle.replace(/[^a-zA-Z0-9_-]/g, '_')}_Acta_Oficial.pdf`);
+            showToast('Acta Oficial PDF descargada', 'success');
+        }
+
+        /**
+         * ============================================================================
+         * CONTROLES DE INTERFAZ
+         * ============================================================================
+         */
+        function toggleConfigDrawer() {
+            appState.drawerOpen = !appState.drawerOpen;
+            const drawer = document.getElementById('configDrawer');
+            const icon = document.getElementById('drawerToggleIcon');
+            const label = document.getElementById('drawerToggleLabel');
+
+            if (drawer) drawer.classList.toggle('hidden', !appState.drawerOpen);
+            if (icon) icon.className = appState.drawerOpen ? 'fa-solid fa-eye-slash' : 'fa-solid fa-sliders';
+            if (label) label.textContent = appState.drawerOpen ? 'Enfoque Sorteo' : 'Mostrar Listas';
+
+            setTimeout(renderWheels, 60);
+        }
+
+        function toggleFullScreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(() => {});
+            } else {
+                document.exitFullscreen().catch(() => {});
+            }
+        }
+
+        function switchDrawerTab(tab) {
+            const btnConfig = document.getElementById('tabBtnConfig');
+            const btnHistory = document.getElementById('tabBtnHistory');
+            const tabConfig = document.getElementById('drawerTabConfig');
+            const tabHistory = document.getElementById('drawerTabHistory');
+
+            if (tab === 'config') {
+                btnConfig.className = 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 bg-[#FF7A00] text-white shadow';
+                btnHistory.className = 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-white';
+                tabConfig.classList.remove('hidden');
+                tabConfig.classList.add('flex');
+                tabHistory.classList.add('hidden');
+                tabHistory.classList.remove('flex');
+            } else {
+                btnHistory.className = 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 bg-[#FF7A00] text-white shadow';
+                btnConfig.className = 'py-2.5 px-3 rounded-xl text-xs sm:text-sm font-bold transition flex items-center justify-center gap-2 text-slate-400 hover:text-white';
+                tabHistory.classList.remove('hidden');
+                tabHistory.classList.add('flex');
+                tabConfig.classList.add('hidden');
+                tabConfig.classList.remove('flex');
+            }
+        }
+
+        let toastTimer = null;
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const text = document.getElementById('toastText');
+            const icon = document.getElementById('toastIcon');
+            if (!toast || !text || !icon) return;
+
+            text.textContent = message;
+            if (type === 'error') {
+                icon.className = 'fa-solid fa-circle-exclamation text-rose-400 text-base';
+            } else if (type === 'info') {
+                icon.className = 'fa-solid fa-circle-info text-sky-400 text-base';
+            } else {
+                icon.className = 'fa-solid fa-circle-check text-emerald-400 text-base';
+            }
+
+            toast.classList.remove('translate-y-24', 'opacity-0');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => {
+                toast.classList.add('translate-y-24', 'opacity-0');
+            }, 3000);
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        // Inicialización al cargar la página
+        window.addEventListener('DOMContentLoaded', () => {
+            const chkRemove = document.getElementById('chkAutoRemove');
+            if (chkRemove) {
+                chkRemove.addEventListener('change', saveStateToStorage);
+            }
+            loadStateFromStorage();
+        });
+
+        window.addEventListener('resize', () => {
+            renderWheels();
+        });
+    </script>
+</body>
+</html>
